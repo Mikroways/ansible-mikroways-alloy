@@ -94,19 +94,23 @@
   changed_when: false
   when: not ansible_check_mode
 
-# 3. Recién ahora se sincroniza staging → conf.d.
-- name: Sincronizar staging con conf.d
-  ansible.builtin.copy:
-    src: "{{ _alloy_staging_dir }}/{{ item }}"
-    dest: "{{ _alloy_conf_dir }}/{{ item }}"
-    remote_src: true
-    owner: root
-    group: alloy
-    mode: "0640"
+# 3. Si staging difiere de conf.d, se respalda conf.d, se sincroniza y se
+# aplica. Si Alloy no carga la config nueva, se restaura la anterior y el rol
+# falla: alloy validate es estático y no detecta errores al construir
+# componentes.
+- name: Leer checksums de staging
+  ansible.builtin.stat:
+    path: "{{ _alloy_staging_dir }}/{{ item }}"
+    get_mime: false
   loop: "{{ _alloy_expected }}"
-  # En --check sobre un host nuevo staging todavía no existe.
-  when: not (ansible_check_mode and _alloy_dirs is changed)
-  notify: Reload alloy
+  register: _alloy_stat_staging
+
+- name: Leer checksums de conf.d
+  ansible.builtin.stat:
+    path: "{{ _alloy_conf_dir }}/{{ item }}"
+    get_mime: false
+  loop: "{{ _alloy_expected }}"
+  register: _alloy_stat_conf
 
 - name: Listar conf.d
   ansible.builtin.find:
@@ -114,15 +118,121 @@
     patterns: "*.alloy"
   register: _alloy_conf_found
 
-- name: Borrar de conf.d lo que no generó el rol
-  ansible.builtin.file:
-    path: "{{ item.path }}"
-    state: absent
-  loop: "{{ _alloy_conf_found.files }}"
+- name: Calcular qué cambia en conf.d
+  ansible.builtin.set_fact:
+    _alloy_conf_changed: >-
+      {{ (_alloy_stat_staging.results | map(attribute='stat.checksum', default='') | list)
+         != (_alloy_stat_conf.results | map(attribute='stat.checksum', default='') | list) }}
+    _alloy_conf_extra: >-
+      {{ _alloy_conf_found.files | map(attribute='path')
+         | reject('in', _alloy_expected | map('regex_replace', '^', _alloy_conf_dir ~ '/') | list) | list }}
+
+- name: Mostrar los cambios de conf.d en --check
+  ansible.builtin.debug:
+    msg: "conf.d cambiaría: {{ _alloy_conf_changed or _alloy_conf_extra | length > 0 }}"
+  when: ansible_check_mode
+  changed_when: _alloy_conf_changed or _alloy_conf_extra | length > 0
+
+- name: Aplicar la config nueva
+  when:
+    - not ansible_check_mode
+    - _alloy_conf_changed or _alloy_conf_extra | length > 0
+  block:
+    - name: Respaldar conf.d
+      ansible.builtin.shell:
+        cmd: "rm -rf {{ _alloy_conf_backup_dir }} && cp -a {{ _alloy_conf_dir }} {{ _alloy_conf_backup_dir }}"
+      changed_when: true
+
+    - name: Sincronizar staging con conf.d
+      ansible.builtin.copy:
+        src: "{{ _alloy_staging_dir }}/{{ item }}"
+        dest: "{{ _alloy_conf_dir }}/{{ item }}"
+        remote_src: true
+        owner: root
+        group: alloy
+        mode: "0640"
+      loop: "{{ _alloy_expected }}"
+
+    - name: Borrar de conf.d lo que no generó el rol
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop: "{{ _alloy_conf_extra }}"
+
+    - name: Ver si Alloy está corriendo
+      ansible.builtin.command: systemctl is-active alloy  # noqa: command-instead-of-module
+      register: _alloy_active
+      changed_when: false
+      failed_when: false
+
+    - name: Aplicar la config en Alloy
+      block:
+        - name: Recargar la config en caliente (/-/reload)
+          ansible.builtin.uri:
+            url: "http://{{ _alloy_listen_addr }}/-/reload"
+            return_content: true
+          register: _alloy_reload
+          when: _alloy_active.stdout == 'active'
+
+        - name: Arrancar Alloy con la config nueva
+          ansible.builtin.systemd_service:
+            name: alloy
+            state: restarted
+            enabled: true
+            daemon_reload: true
+          when: _alloy_active.stdout != 'active'
+
+        - name: Esperar a que Alloy cargue la config (/-/ready)
+          ansible.builtin.uri:
+            url: "http://{{ _alloy_listen_addr }}/-/ready"
+          register: _alloy_ready
+          until: _alloy_ready.status == 200
+          retries: 10
+          delay: 2
+      rescue:
+        - name: Restaurar la config anterior
+          ansible.builtin.shell:
+            cmd: >-
+              rm -f {{ _alloy_conf_dir }}/*.alloy &&
+              cp -a {{ _alloy_conf_backup_dir }}/. {{ _alloy_conf_dir }}/
+          changed_when: true
+
+        - name: Volver a cargar la config anterior
+          ansible.builtin.systemd_service:
+            name: alloy
+            state: restarted
+          failed_when: false
+
+        - name: Aplicar la config en Alloy falló y se restauró la anterior
+          ansible.builtin.fail:
+            msg: >-
+              Alloy no cargó la config nueva y se restauró la anterior.
+              {{ (_alloy_reload.content | default('')) if _alloy_reload is defined else '' }}
+              Revisá 'journalctl -u alloy'.
+
+- name: Revisar que alloy pueda leer los archivos de log
+  ansible.builtin.shell:
+    cmd: >-
+      runuser -u alloy -- sh -c 'for f in {{ item.path }}; do
+      [ -e "$f" ] && [ ! -r "$f" ] && echo "$f"; done; true'
+  register: _alloy_unreadable
+  loop: "{{ alloy_log_files }}"
   loop_control:
-    label: "{{ item.path | basename }}"
-  when: (item.path | basename) not in _alloy_expected
-  notify: Reload alloy
+    label: "{{ item.path }}"
+  changed_when: false
+  check_mode: false
+  when: _alloy_installed_version | length > 0 or not ansible_check_mode
+
+- name: Avisar de archivos de log que alloy no puede leer
+  ansible.builtin.debug:
+    msg: >-
+      [WARNING] alloy no puede leer {{ item.stdout_lines | join(', ') }}.
+      El rol no cambia permisos del cliente: sumá alloy a un grupo con
+      alloy_extra_groups o ajustá los permisos.
+  loop: "{{ _alloy_unreadable.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.path | default('') }}"
+  when: item.stdout_lines | default([]) | length > 0
 
 - name: Avisar que la verificación TLS está apagada
   ansible.builtin.debug:

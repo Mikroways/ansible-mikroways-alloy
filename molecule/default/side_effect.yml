@@ -1,40 +1,7 @@
 ---
-# 1. Downgrade a mano y volver a converger: queda la versión fijada.
-# 2. Config inválida: el rol falla y conf.d/ queda como estaba.
-# 3. Rotación del password de métricas: Alloy toma el nuevo sin reinstalar.
-- name: Instalar una versión anterior a mano
-  hosts: all
-  gather_facts: true
-  vars:
-    _old: "1.21.0"
-    _arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts['architecture']] }}"
-    _ext: "{{ 'deb' if ansible_facts['os_family'] == 'Debian' else 'rpm' }}"
-    _pkg: "alloy-{{ _old }}-1.{{ _arch }}.{{ _ext }}"
-  tasks:
-    - name: Bajar el paquete viejo
-      ansible.builtin.get_url:
-        url: "https://github.com/grafana/alloy/releases/download/v{{ _old }}/{{ _pkg }}"
-        dest: "/tmp/{{ _pkg }}"
-        mode: "0644"
-
-    - name: Instalar el paquete viejo (Debian)
-      ansible.builtin.command: "dpkg -i --force-confold /tmp/{{ _pkg }}"
-      changed_when: true
-      when: ansible_facts['os_family'] == 'Debian'
-
-    - name: Instalar el paquete viejo (RedHat)
-      ansible.builtin.command: "rpm -U --oldpackage --nodeps /tmp/{{ _pkg }}"  # noqa: command-instead-of-module
-      changed_when: true
-      when: ansible_facts['os_family'] == 'RedHat'
-
-    - name: Borrar el paquete viejo
-      ansible.builtin.file:
-        path: "/tmp/{{ _pkg }}"
-        state: absent
-
-- name: Volver a converger
-  ansible.builtin.import_playbook: converge.yml
-
+# 1. Config inválida: el rol falla y conf.d/ queda como estaba.
+# 2. Rotación del password de métricas: Alloy toma el nuevo sin reinstalar.
+# (El downgrade se prueba en el escenario version.)
 - name: Config inválida no llega al servicio
   hosts: all
   gather_facts: true
@@ -75,6 +42,63 @@
     - name: Verificar que el servicio sigue activo
       ansible.builtin.assert:
         that: _active.stdout == 'active'
+
+- name: Config que pasa alloy validate pero falla al cargar
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Converger con un componente que no se puede construir
+      block:
+        - name: Aplicar el rol con un selector inválido
+          ansible.builtin.include_role:
+            name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+          vars:
+            alloy_extra_config_files:
+              - name: no-carga
+                content: |
+                  loki.process "no_carga" {
+                    forward_to = []
+                    stage.match {
+                      selector = "{a=b}"
+                      action   = "drop"
+                    }
+                  }
+        - name: Fallar si el rol aceptó la config que no carga
+          ansible.builtin.fail:
+            msg: El rol debía fallar con la config que no carga
+      rescue:
+        - name: Verificar que falló al aplicar la config (y no por otra cosa)
+          ansible.builtin.assert:
+            that: ansible_failed_task.name is search('Aplicar la config')
+            fail_msg: "Falló otra tarea: {{ ansible_failed_task.name }}"
+            quiet: true
+
+    - name: Buscar el archivo que no carga en conf.d
+      ansible.builtin.stat:
+        path: /etc/alloy/conf.d/no-carga.alloy
+      register: _nocarga
+
+    - name: Verificar que conf.d volvió a la config anterior
+      ansible.builtin.assert:
+        that: not _nocarga.stat.exists
+
+    - name: Reiniciar Alloy (con conf.d restaurado tiene que arrancar)
+      ansible.builtin.systemd_service:
+        name: alloy
+        state: restarted
+
+    - name: Leer el estado del servicio después del reinicio
+      ansible.builtin.command: systemctl is-active alloy  # noqa: command-instead-of-module
+      register: _active2
+      changed_when: false
+      failed_when: false
+      retries: 5
+      delay: 2
+      until: _active2.stdout == 'active'
+
+    - name: Verificar que el servicio arrancó
+      ansible.builtin.assert:
+        that: _active2.stdout == 'active'
 
 - name: Rotar el password en el receptor
   hosts: localhost

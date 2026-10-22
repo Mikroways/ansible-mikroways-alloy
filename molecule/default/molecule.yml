@@ -59,6 +59,9 @@ provisioner:
           - no-existe.service
         alloy_processes:
           - {name: sleep, cmdline_regex: "sleep infinity"}
+        alloy_log_files:
+          - path: /var/log/alloy-test*.log
+            labels: {app: test}
         alloy_tls_ca_pem: "{{ lookup('file', lookup('env', 'MOLECULE_PROJECT_DIRECTORY') ~ '/molecule/resources/receiver/.ca/ca.crt') }}"
 verifier:
   name: ansible

@@ -48,6 +48,7 @@ _alloy_env_file: "{{ '/etc/default/alloy' if ansible_facts['os_family'] == 'Debi
 _alloy_conf_dir: /etc/alloy/conf.d
 _alloy_secrets_dir: /etc/alloy/secrets
 _alloy_staging_dir: /var/lib/alloy/staging
+_alloy_conf_backup_dir: /var/lib/alloy/conf.d.prev
 _alloy_listen_addr: "127.0.0.1:12345"
 
 # Entorno de proxy para las descargas desde el host.
@@ -67,6 +68,8 @@ _alloy_conf_files: >-
   {{ ['00-envio']
      + (['10-host'] if alloy_host_metrics_enabled | bool else [])
      + (['20-servicios'] if alloy_processes | length > 0 else [])
+     + (['40-journal'] if alloy_logs_journal_enabled | bool else [])
+     + (['50-archivos'] if alloy_log_files | length > 0 else [])
      + (['90-self'] if alloy_self_monitoring_enabled | bool else []) }}
 
 # Collectors efectivos: systemd solo si hay units vigiladas (Tarea 6).

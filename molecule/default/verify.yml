@@ -23,6 +23,18 @@
       ansible.builtin.assert:
         that: _enabled.stdout == 'enabled'
 
+    - name: Escribir logs de prueba en journald
+      ansible.builtin.command: "logger -p user.{{ item }} alloy-test-{{ item }}-{{ inventory_hostname }}"
+      loop: [err, info]
+      changed_when: false
+
+    - name: Escribir logs de prueba en archivo
+      ansible.builtin.shell:
+        cmd: |
+          echo "$(date -Is) ERROR alloy-file-err-{{ inventory_hostname }}" >> /var/log/alloy-test.log
+          echo "$(date -Is) INFO alloy-file-info-{{ inventory_hostname }}" >> /var/log/alloy-test.log
+      changed_when: false
+
     - name: Verificar lo que llega al receptor
       ansible.builtin.include_tasks: ../resources/verify-tasks.yml
       vars:
@@ -47,3 +59,8 @@
           - {query: 'backup_test_last_success_timestamp_seconds{ {{ _sel }} }', expect: present}
           - {query: 'node_systemd_unit_state{ {{ _sel }},state="inactive"}', expect: absent}
           - {query: 'otro_metric_test{ {{ _sel }} }', expect: absent}
+        verify_loki_queries:
+          - {query: '{ {{ _sel }},job="integrations/journal",level="error"} |= "alloy-test-err-{{ inventory_hostname }}"', expect: present}
+          - {query: '{ {{ _sel }},app="test"} |= "alloy-file-err-{{ inventory_hostname }}"', expect: present}
+          - {query: '{ {{ _sel }} } |= "alloy-test-info-{{ inventory_hostname }}"', expect: absent}
+          - {query: '{ {{ _sel }} } |= "alloy-file-info-{{ inventory_hostname }}"', expect: absent}

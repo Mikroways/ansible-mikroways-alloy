@@ -184,3 +184,18 @@
           # HELP otro_metric_test No pasa la allowlist.
           # TYPE otro_metric_test gauge
           otro_metric_test 1
+
+    # El archivo existe desde antes de que arranque Alloy (tail desde el final).
+    - name: Crear el archivo de log de prueba
+      ansible.builtin.copy:
+        dest: /var/log/alloy-test.log
+        content: ""
+        mode: "0644"
+        force: false
+
+    - name: Crear un log que alloy no puede leer (para el warning)
+      ansible.builtin.copy:
+        dest: /var/log/alloy-test-privado.log
+        content: ""
+        mode: "0600"
+        force: false
