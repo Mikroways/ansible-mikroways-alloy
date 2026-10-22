@@ -1,0 +1,30 @@
+---
+# Arma la lista de units vigiladas: las pedidas, la de NTP y la de Teleport.
+- name: Leer las units del host
+  ansible.builtin.service_facts:
+
+- name: Detectar NTP y Teleport
+  ansible.builtin.set_fact:
+    _alloy_ntp_unit: >-
+      {{ (['chrony.service', 'chronyd.service', 'systemd-timesyncd.service', 'ntpd.service', 'ntp.service']
+          | select('in', ansible_facts.services) | list + [''])[0] }}
+    _alloy_teleport_on: >-
+      {{ (alloy_teleport_enabled | string | lower == 'true')
+         or (alloy_teleport_enabled | string | lower == 'auto' and 'teleport.service' in ansible_facts.services) }}
+
+- name: Calcular las units vigiladas
+  ansible.builtin.set_fact:
+    _alloy_units: >-
+      {{ (alloy_systemd_units
+          + ([_alloy_ntp_unit] if alloy_ntp_autodetect | bool and _alloy_ntp_unit | length > 0 else [])
+          + (['teleport.service'] if _alloy_teleport_on | bool else []))
+         | unique | list }}
+
+- name: Calcular el filtro de units
+  ansible.builtin.set_fact:
+    _alloy_units_regex: "^({{ _alloy_units | map('regex_escape') | join('|') }})$"
+
+- name: Avisar de units pedidas que no existen en el host
+  ansible.builtin.debug:
+    msg: "[WARNING] La unit {{ item }} está en alloy_systemd_units pero no existe en {{ inventory_hostname }}."
+  loop: "{{ alloy_systemd_units | reject('in', ansible_facts.services) | list }}"

@@ -1,0 +1,25 @@
+// {{ ansible_managed }}
+// Procesos que tienen que estar corriendo y no son units de systemd.
+prometheus.exporter.process "procesos" {
+{% for p in alloy_processes %}
+  matcher {
+    name    = {{ p.name | to_json }}
+    cmdline = [{{ p.cmdline_regex | to_json }}]
+  }
+{% endfor %}
+}
+
+discovery.relabel "procesos" {
+  targets = prometheus.exporter.process.procesos.targets
+
+  rule {
+    target_label = "job"
+    replacement  = "integrations/process_exporter"
+  }
+}
+
+prometheus.scrape "procesos" {
+  targets         = discovery.relabel.procesos.output
+  scrape_interval = {{ alloy_scrape_interval | to_json }}
+  forward_to      = [prometheus.relabel.comun.receiver]
+}

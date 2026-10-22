@@ -40,3 +40,10 @@
           - {query: 'node_netstat_Tcp_InSegs{ {{ _sel }} }', expect: absent}
           - {query: 'node_cpu_guest_seconds_total{ {{ _sel }} }', expect: absent}
           - {query: 'node_network_receive_bytes_total{ {{ _sel }},device="lo"}', expect: absent}
+          # Servicios, NTP, procesos y textfile.
+          - {query: 'node_systemd_unit_state{ {{ _sel }},name="alloy-test-dummy.service",state="active"} == 1', expect: present}
+          - {query: 'node_systemd_unit_state{ {{ _sel }},name=~"chronyd?.service|systemd-timesyncd.service",state="active"}', expect: present}
+          - {query: 'namedprocess_namegroup_num_procs{ {{ _sel }},groupname="sleep",job="integrations/process_exporter"} >= 1', expect: present}
+          - {query: 'backup_test_last_success_timestamp_seconds{ {{ _sel }} }', expect: present}
+          - {query: 'node_systemd_unit_state{ {{ _sel }},state="inactive"}', expect: absent}
+          - {query: 'otro_metric_test{ {{ _sel }} }', expect: absent}

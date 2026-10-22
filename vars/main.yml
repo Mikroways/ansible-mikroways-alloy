@@ -66,6 +66,7 @@ _alloy_common_labels: >-
 _alloy_conf_files: >-
   {{ ['00-envio']
      + (['10-host'] if alloy_host_metrics_enabled | bool else [])
+     + (['20-servicios'] if alloy_processes | length > 0 else [])
      + (['90-self'] if alloy_self_monitoring_enabled | bool else []) }}
 
 # Collectors efectivos: systemd solo si hay units vigiladas (Tarea 6).

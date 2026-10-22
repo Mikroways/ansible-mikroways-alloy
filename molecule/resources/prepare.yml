@@ -129,3 +129,58 @@
       loop:
         - http://127.0.0.1:19090/-/ready
         - http://127.0.0.1:13100/ready
+
+# Lo que las pruebas esperan encontrar en cada host.
+- name: Preparar los hosts de prueba
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Leer las units del host
+      ansible.builtin.service_facts:
+
+    - name: Instalar chrony si el host no tiene servicio de hora
+      ansible.builtin.package:
+        name: chrony
+        state: present
+        update_cache: true
+      when:
+        - "'chrony.service' not in ansible_facts.services"
+        - "'chronyd.service' not in ansible_facts.services"
+        - "'systemd-timesyncd.service' not in ansible_facts.services"
+
+    - name: Crear una unit de prueba que tiene que estar activa
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/alloy-test-dummy.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Unit de prueba del rol alloy
+          [Service]
+          ExecStart=/bin/sleep infinity
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Arrancar la unit de prueba
+      ansible.builtin.systemd_service:
+        name: alloy-test-dummy.service
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    - name: Crear el directorio de textfile
+      ansible.builtin.file:
+        path: /var/lib/node_exporter
+        state: directory
+        mode: "0755"
+
+    - name: Publicar una métrica de backup de prueba
+      ansible.builtin.copy:
+        dest: /var/lib/node_exporter/backup_test.prom
+        mode: "0644"
+        content: |
+          # HELP backup_test_last_success_timestamp_seconds Último backup OK.
+          # TYPE backup_test_last_success_timestamp_seconds gauge
+          backup_test_last_success_timestamp_seconds 1792700000
+          # HELP otro_metric_test No pasa la allowlist.
+          # TYPE otro_metric_test gauge
+          otro_metric_test 1

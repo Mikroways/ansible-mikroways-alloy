@@ -13,7 +13,7 @@ prometheus.exporter.unix "host" {
 {% if 'systemd' in _alloy_collectors %}
 
   systemd {
-    unit_include    = {{ _alloy_units_regex | default('^$') | to_json }}
+    unit_include    = {{ _alloy_units_regex | to_json }}
     enable_restarts = {{ alloy_systemd_restarts | bool | lower }}
   }
 {% endif %}
@@ -31,5 +31,17 @@ discovery.relabel "host" {
 prometheus.scrape "host" {
   targets         = discovery.relabel.host.output
   scrape_interval = {{ alloy_scrape_interval | to_json }}
-  forward_to      = [prometheus.relabel.comun.receiver]
+  forward_to      = [prometheus.relabel.host.receiver]
+}
+
+// De node_systemd_unit_state solo se guarda state="active" (0/1): alcanza
+// para alertar "no está activa" sin multiplicar series por cinco.
+prometheus.relabel "host" {
+  forward_to = [prometheus.relabel.comun.receiver]
+
+  rule {
+    source_labels = ["__name__", "state"]
+    regex         = "node_systemd_unit_state;(activating|deactivating|failed|inactive|maintenance|reloading|refreshing)"
+    action        = "drop"
+  }
 }

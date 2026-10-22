@@ -15,6 +15,34 @@
 - name: Escribir los secretos
   ansible.builtin.include_tasks: secrets.yml
 
+- name: Detectar units de NTP y Teleport
+  ansible.builtin.include_tasks: detect.yml
+
+# El rol solo borra en absent el directorio de textfile si lo creó él.
+- name: Ver si existe el directorio de textfile
+  ansible.builtin.stat:
+    path: "{{ alloy_textfile_directory }}"
+  register: _alloy_textfile_stat
+
+- name: Crear el directorio de textfile
+  when: not _alloy_textfile_stat.stat.exists
+  block:
+    - name: Crear el directorio de textfile
+      ansible.builtin.file:
+        path: "{{ alloy_textfile_directory }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Registrar que el directorio de textfile lo creó el rol
+      ansible.builtin.copy:
+        dest: /var/lib/alloy/.textfile-created
+        content: "{{ alloy_textfile_directory }}\n"
+        owner: root
+        group: root
+        mode: "0644"
+
 - name: Calcular los archivos de config esperados
   ansible.builtin.set_fact:
     _alloy_expected: >-
