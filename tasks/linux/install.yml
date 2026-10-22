@@ -74,19 +74,19 @@
   when: ansible_facts['os_family'] == 'RedHat'
   block:
     - name: Buscar repos de Grafana
-      ansible.builtin.shell:
-        cmd: grep -l -i -E 'rpm\.grafana\.com|packages\.grafana\.com' /etc/yum.repos.d/*.repo
+      ansible.builtin.find:
+        paths: /etc/yum.repos.d
+        patterns: "*.repo"
+        contains: '.*(rpm|packages)\.grafana\.com.*'
       register: _alloy_grafana_repo
-      changed_when: false
-      failed_when: false
-      check_mode: false
 
     - name: Avisar del repo de Grafana
       ansible.builtin.debug:
         msg: >-
-          [WARNING] Hay un repo de Grafana configurado ({{ _alloy_grafana_repo.stdout_lines | join(', ') }}).
+          [WARNING] Hay un repo de Grafana configurado
+          ({{ _alloy_grafana_repo.files | map(attribute='path') | join(', ') }}).
           Un 'dnf upgrade' puede cambiar la versión de Alloy fijada por el rol.
-      when: _alloy_grafana_repo.stdout | length > 0
+      when: _alloy_grafana_repo.matched > 0
 
 - name: Escribir el archivo de entorno del servicio
   ansible.builtin.template:

@@ -22,7 +22,7 @@
       when: ansible_facts['os_family'] == 'Debian'
 
     - name: Instalar el paquete viejo (RedHat)
-      ansible.builtin.command: "rpm -U --oldpackage --nodeps /tmp/{{ _pkg }}"
+      ansible.builtin.command: "rpm -U --oldpackage --nodeps /tmp/{{ _pkg }}"  # noqa: command-instead-of-module
       changed_when: true
       when: ansible_facts['os_family'] == 'RedHat'
 
