@@ -65,7 +65,13 @@ _alloy_common_labels: >-
 # Archivos de config (sin extensión) que genera el rol en conf.d/.
 _alloy_conf_files: >-
   {{ ['00-envio']
+     + (['10-host'] if alloy_host_metrics_enabled | bool else [])
      + (['90-self'] if alloy_self_monitoring_enabled | bool else []) }}
+
+# Collectors efectivos: systemd solo si hay units vigiladas (Tarea 6).
+_alloy_collectors: >-
+  {{ (alloy_unix_collectors + (['systemd'] if (_alloy_units | default([])) | length > 0 else []))
+     | unique | list }}
 
 # CA efectiva para TLS ("" = la del sistema).
 _alloy_ca_file: >-

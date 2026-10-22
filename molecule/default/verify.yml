@@ -32,3 +32,11 @@
           - {query: 'prometheus_remote_storage_samples_total{ {{ _sel }} }', expect: present}
           # Muestra reciente: después de rotar el password se sigue enviando.
           - {query: '(time() - timestamp(alloy_build_info{ {{ _sel }} })) < 150', expect: present}
+          # Host y NTP.
+          - {query: 'node_load1{ {{ _sel }},job="integrations/node_exporter",instance="{{ inventory_hostname }}"}', expect: present}
+          - {query: 'node_timex_sync_status{ {{ _sel }} }', expect: present}
+          - {query: 'node_filesystem_avail_bytes{ {{ _sel }} }', expect: present}
+          # Fuera del set de collectors o de la allowlist.
+          - {query: 'node_netstat_Tcp_InSegs{ {{ _sel }} }', expect: absent}
+          - {query: 'node_cpu_guest_seconds_total{ {{ _sel }} }', expect: absent}
+          - {query: 'node_network_receive_bytes_total{ {{ _sel }},device="lo"}', expect: absent}

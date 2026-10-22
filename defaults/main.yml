@@ -85,13 +85,41 @@ alloy_netdev_device_exclude: "^(lo|veth.*|docker.*|br-.*|cali.*)$"
 
 # Allowlist de nombres de métrica. Lo que no matchea se descarta antes de
 # enviar. Se arma con una lista para que se pueda leer y extender.
+# El catálogo de LABSMW-32 puede pedir agregar o sacar series acá.
 alloy_metrics_allowlist_items:
   - up
-  # Self-monitoring de Alloy.
+  # CPU, carga y memoria.
+  - node_cpu_seconds_total
+  - node_load(1|5|15)
+  - node_memory_(MemTotal|MemAvailable|MemFree|Buffers|Cached|SwapTotal|SwapFree)_bytes
+  # Filesystem y disco.
+  - node_filesystem_(size|avail|free)_bytes
+  - node_filesystem_files(_free)?
+  - node_filesystem_readonly
+  - node_disk_(read|written)_bytes_total
+  - node_disk_io_time_seconds_total
+  # Red.
+  - node_network_(receive|transmit)_(bytes|errs|drop)_total
+  # Sistema, hora y NTP.
+  - node_uname_info
+  - node_os_info
+  - node_time_seconds
+  - node_boot_time_seconds
+  - node_timex_(sync_status|offset_seconds|maxerror_seconds)
+  # Servicios, procesos y textfile.
+  - node_systemd_unit_state
+  - node_systemd_service_restart_total
+  - node_textfile_scrape_error
+  - namedprocess_namegroup_num_procs
+  # Teleport.
+  - process_state
+  - teleport_build_info
+  # Self-monitoring de Alloy: si deja de enviar o descarta datos.
   - alloy_build_info
-  - prometheus_remote_storage_.*
-  - loki_write_.*
-alloy_metrics_allowlist: "{{ alloy_metrics_allowlist_items | join('|') }}"
+  - prometheus_remote_storage_samples_(total|failed_total|retried_total|pending)
+  - prometheus_remote_storage_(highest_timestamp_in_seconds|queue_highest_sent_timestamp_seconds)
+  - loki_write_(sent_entries_total|dropped_entries_total|sent_bytes_total)
+alloy_metrics_allowlist: "{{ (alloy_metrics_allowlist_items + [alloy_textfile_allowlist]) | join('|') }}"
 
 # Directorio del textfile collector. El mismo que usa mikroways.restic
 # (restic_prometheus_exporter_metrics_basedir).

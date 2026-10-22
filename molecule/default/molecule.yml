@@ -15,9 +15,11 @@ platforms:
     command: ""
     volumes:
       - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    # /var/cache/alloy en tmpfs: el paquete (~170 MB) no ocupa disco en las pruebas.
     tmpfs:
       - /run
       - /tmp
+      - /var/cache/alloy
     networks:
       - name: alloy-test
   - <<: *plataforma

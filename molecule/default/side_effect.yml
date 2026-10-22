@@ -27,6 +27,11 @@
       changed_when: true
       when: ansible_facts['os_family'] == 'RedHat'
 
+    - name: Borrar el paquete viejo
+      ansible.builtin.file:
+        path: "/tmp/{{ _pkg }}"
+        state: absent
+
 - name: Volver a converger
   ansible.builtin.import_playbook: converge.yml
 

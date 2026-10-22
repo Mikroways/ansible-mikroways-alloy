@@ -64,6 +64,13 @@
     - name: Instalar el paquete
       ansible.builtin.include_tasks: "install-{{ ansible_facts['os_family'] }}.yml"
 
+    # El paquete pesa ~170 MB: no se deja en el host. Solo se vuelve a bajar
+    # si cambia alloy_version.
+    - name: Borrar el paquete descargado
+      ansible.builtin.file:
+        path: "{{ _alloy_cache_dir }}/{{ _alloy_pkg_name }}"
+        state: absent
+
 - name: Fijar el paquete (Debian)
   ansible.builtin.dpkg_selections:
     name: alloy
