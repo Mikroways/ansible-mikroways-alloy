@@ -1,0 +1,10 @@
+---
+# El release no firma los paquetes con GPG: la integridad la da el sha256
+# verificado contra SHA256SUMS en la descarga.
+- name: Instalar el paquete de Alloy (rpm)
+  ansible.builtin.dnf:
+    name: "{{ _alloy_cache_dir }}/{{ _alloy_pkg_name }}"
+    disable_gpg_check: true
+    allow_downgrade: true
+    state: present
+  notify: Restart alloy

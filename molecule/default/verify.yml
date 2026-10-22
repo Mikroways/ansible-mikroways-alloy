@@ -3,6 +3,26 @@
   hosts: all
   gather_facts: false
   tasks:
+    - name: Leer la versión de Alloy instalada
+      ansible.builtin.command: alloy --version
+      register: _version
+      changed_when: false
+
+    - name: Verificar la versión fijada
+      ansible.builtin.assert:
+        that: "'v1.21.1' in _version.stdout"
+        fail_msg: "Versión inesperada: {{ _version.stdout_lines | first | default('') }}"
+
+    - name: Leer si el servicio está habilitado
+      ansible.builtin.command: systemctl is-enabled alloy
+      register: _enabled
+      changed_when: false
+      failed_when: false
+
+    - name: Verificar que el servicio esté habilitado
+      ansible.builtin.assert:
+        that: _enabled.stdout == 'enabled'
+
     - name: Verificar lo que llega al receptor
       ansible.builtin.include_tasks: ../resources/verify-tasks.yml
       vars:

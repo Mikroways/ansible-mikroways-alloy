@@ -35,3 +35,24 @@ _alloy_supported_os:
 
 # Hay algún pipeline de logs encendido.
 _alloy_logs_on: "{{ alloy_logs_journal_enabled | bool or (alloy_log_files | length > 0) }}"
+
+# Paquete del release para este host.
+_alloy_arch: "{{ _alloy_arch_map[ansible_facts['architecture']] | default(ansible_facts['architecture']) }}"
+_alloy_pkg_ext: "{{ 'deb' if ansible_facts['os_family'] == 'Debian' else 'rpm' }}"
+_alloy_pkg_name: "alloy-{{ alloy_version }}-1.{{ _alloy_arch }}.{{ _alloy_pkg_ext }}"
+_alloy_pkg_url: "{{ alloy_download_base_url }}/v{{ alloy_version }}/{{ _alloy_pkg_name }}"
+_alloy_checksum_url: "{{ alloy_download_base_url }}/v{{ alloy_version }}/SHA256SUMS"
+_alloy_cache_dir: /var/cache/alloy
+_alloy_controller_cache_dir: "{{ lookup('ansible.builtin.env', 'HOME') }}/.cache/mikroways-alloy"
+_alloy_env_file: "{{ '/etc/default/alloy' if ansible_facts['os_family'] == 'Debian' else '/etc/sysconfig/alloy' }}"
+_alloy_conf_dir: /etc/alloy/conf.d
+_alloy_secrets_dir: /etc/alloy/secrets
+_alloy_staging_dir: /var/lib/alloy/staging
+_alloy_listen_addr: "127.0.0.1:12345"
+
+# Entorno de proxy para las descargas desde el host.
+_alloy_proxy_env: >-
+  {{ {} if alloy_proxy_url | length == 0 else
+     {'https_proxy': alloy_proxy_url, 'HTTPS_PROXY': alloy_proxy_url,
+      'http_proxy': alloy_proxy_url, 'HTTP_PROXY': alloy_proxy_url,
+      'no_proxy': alloy_no_proxy, 'NO_PROXY': alloy_no_proxy} }}

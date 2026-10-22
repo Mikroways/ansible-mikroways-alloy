@@ -1,3 +1,112 @@
 ---
-# Se implementa en las tareas siguientes del plan.
-[]
+- name: Leer los paquetes instalados
+  ansible.builtin.package_facts:
+    manager: auto
+
+- name: Calcular la versión instalada de Alloy
+  ansible.builtin.set_fact:
+    _alloy_installed_version: >-
+      {{ (ansible_facts.packages['alloy'][0].version | regex_replace('-.*$', ''))
+         if 'alloy' in ansible_facts.packages else '' }}
+
+- name: Descargar e instalar el paquete
+  when: _alloy_installed_version != alloy_version
+  block:
+    - name: Crear el directorio de caché
+      ansible.builtin.file:
+        path: "{{ _alloy_cache_dir }}"
+        state: directory
+        owner: root
+        group: root
+        mode: "0755"
+
+    - name: Descargar el paquete en el host (verifica sha256)
+      ansible.builtin.get_url:
+        url: "{{ _alloy_pkg_url }}"
+        dest: "{{ _alloy_cache_dir }}/{{ _alloy_pkg_name }}"
+        checksum: "sha256:{{ _alloy_checksum_url }}"
+        mode: "0644"
+      environment: "{{ _alloy_proxy_env }}"
+      when: not alloy_download_on_controller | bool
+
+    - name: Descargar el paquete en el controlador y copiarlo
+      when: alloy_download_on_controller | bool
+      block:
+        - name: Crear el directorio de caché del controlador
+          ansible.builtin.file:
+            path: "{{ _alloy_controller_cache_dir }}"
+            state: directory
+            mode: "0755"
+          delegate_to: localhost
+          become: false
+          run_once: true
+
+        # throttle: 1 serializa las descargas; el segundo host con la misma
+        # arquitectura encuentra el archivo con el checksum correcto.
+        - name: Descargar el paquete en el controlador (verifica sha256)
+          ansible.builtin.get_url:
+            url: "{{ _alloy_pkg_url }}"
+            dest: "{{ _alloy_controller_cache_dir }}/{{ _alloy_pkg_name }}"
+            checksum: "sha256:{{ _alloy_checksum_url }}"
+            mode: "0644"
+          delegate_to: localhost
+          become: false
+          throttle: 1
+
+        - name: Copiar el paquete al host
+          ansible.builtin.copy:
+            src: "{{ _alloy_controller_cache_dir }}/{{ _alloy_pkg_name }}"
+            dest: "{{ _alloy_cache_dir }}/{{ _alloy_pkg_name }}"
+            owner: root
+            group: root
+            mode: "0644"
+
+    - name: Instalar el paquete
+      ansible.builtin.include_tasks: "install-{{ ansible_facts['os_family'] }}.yml"
+
+- name: Fijar el paquete (Debian)
+  ansible.builtin.dpkg_selections:
+    name: alloy
+    selection: hold
+  when: ansible_facts['os_family'] == 'Debian'
+
+- name: Avisar si hay un repo de Grafana que ofrezca alloy (RedHat)
+  when: ansible_facts['os_family'] == 'RedHat'
+  block:
+    - name: Buscar repos de Grafana
+      ansible.builtin.shell:
+        cmd: grep -l -i -E 'rpm\.grafana\.com|packages\.grafana\.com' /etc/yum.repos.d/*.repo
+      register: _alloy_grafana_repo
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Avisar del repo de Grafana
+      ansible.builtin.debug:
+        msg: >-
+          [WARNING] Hay un repo de Grafana configurado ({{ _alloy_grafana_repo.stdout_lines | join(', ') }}).
+          Un 'dnf upgrade' puede cambiar la versión de Alloy fijada por el rol.
+      when: _alloy_grafana_repo.stdout | length > 0
+
+- name: Escribir el archivo de entorno del servicio
+  ansible.builtin.template:
+    src: env.j2
+    dest: "{{ _alloy_env_file }}"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart alloy
+
+- name: Sumar el usuario alloy a grupos extra
+  ansible.builtin.user:
+    name: alloy
+    groups: "{{ alloy_extra_groups }}"
+    append: true
+  when: alloy_extra_groups | length > 0
+  notify: Restart alloy
+
+- name: Habilitar el servicio
+  ansible.builtin.systemd_service:
+    name: alloy
+    enabled: true
+    daemon_reload: true

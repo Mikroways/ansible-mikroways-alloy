@@ -85,8 +85,15 @@
       community.docker.docker_container:
         name: alloy-test-receiver
         image: docker.io/library/nginx:1.27-alpine
+        command:
+          - sh
+          - -c
+          - >-
+            R=$(awk '/^nameserver/{print $2; exit}' /etc/resolv.conf);
+            sed "s/__RESOLVER__/$R/" /etc/nginx/test.conf.tpl > /etc/nginx/nginx.conf;
+            exec nginx -g 'daemon off;'
         volumes:
-          - "{{ _res }}/nginx.conf:/etc/nginx/nginx.conf:ro"
+          - "{{ _res }}/nginx.conf:/etc/nginx/test.conf.tpl:ro"
           - "{{ _ca }}/server.crt:/etc/nginx/certs/server.crt:ro"
           - "{{ _ca }}/server.key:/etc/nginx/certs/server.key:ro"
           - "{{ _ca }}/auth:/etc/nginx/auth:ro"

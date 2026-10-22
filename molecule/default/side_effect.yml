@@ -1,0 +1,30 @@
+---
+# Downgrade a mano a una versión anterior y volver a converger: el rol tiene
+# que dejar instalada la versión fijada.
+- name: Instalar una versión anterior a mano
+  hosts: all
+  gather_facts: true
+  vars:
+    _old: "1.21.0"
+    _arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts['architecture']] }}"
+    _ext: "{{ 'deb' if ansible_facts['os_family'] == 'Debian' else 'rpm' }}"
+    _pkg: "alloy-{{ _old }}-1.{{ _arch }}.{{ _ext }}"
+  tasks:
+    - name: Bajar el paquete viejo
+      ansible.builtin.get_url:
+        url: "https://github.com/grafana/alloy/releases/download/v{{ _old }}/{{ _pkg }}"
+        dest: "/tmp/{{ _pkg }}"
+        mode: "0644"
+
+    - name: Instalar el paquete viejo (Debian)
+      ansible.builtin.command: "dpkg -i --force-confold /tmp/{{ _pkg }}"
+      changed_when: true
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Instalar el paquete viejo (RedHat)
+      ansible.builtin.command: "rpm -U --oldpackage --nodeps /tmp/{{ _pkg }}"
+      changed_when: true
+      when: ansible_facts['os_family'] == 'RedHat'
+
+- name: Volver a converger
+  ansible.builtin.import_playbook: converge.yml
