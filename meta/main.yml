@@ -1,0 +1,28 @@
+---
+galaxy_info:
+  author: Mikroways
+  description: Instala y configura Grafana Alloy para enviar métricas y logs de hosts Linux
+  company: Mikroways
+  namespace: mikroways
+  role_name: alloy
+  license: MIT
+  min_ansible_version: "2.19"
+  platforms:
+    - name: Debian
+      versions: [bullseye, bookworm, trixie]
+    - name: Ubuntu
+      versions: [focal, jammy, noble]
+    - name: EL
+      versions: ["8", "9", "10"]
+    - name: Amazon Linux
+      versions: ["2023"]
+  galaxy_tags:
+    - alloy
+    - grafana
+    - observability
+    - monitoring
+    - prometheus
+    - loki
+    - mikroways
+
+dependencies: []

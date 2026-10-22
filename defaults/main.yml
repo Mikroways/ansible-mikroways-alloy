@@ -1,0 +1,137 @@
+---
+# Instalar (present) o desinstalar (absent) Alloy.
+alloy_state: present
+
+# --- Instalación ---------------------------------------------------------
+# Versión fija de Alloy. Nunca "latest": un cambio de versión tiene que verse
+# en el CHANGELOG del rol o en el inventario.
+alloy_version: "1.21.1"
+# Base de descarga de los paquetes .deb/.rpm. Para un mirror interno, usar la
+# misma estructura de rutas: <base>/v<versión>/alloy-<versión>-1.<arch>.<ext>
+# y <base>/v<versión>/SHA256SUMS.
+alloy_download_base_url: "https://github.com/grafana/alloy/releases/download"
+# Descargar en el controlador y copiar al host, para hosts sin salida a la
+# base de descarga (ni por proxy).
+alloy_download_on_controller: false
+
+# --- Envío ---------------------------------------------------------------
+# URL de Prometheus remote_write (por defecto, el gateway de ingesta).
+alloy_metrics_url: ""
+# URL de Loki push.
+alloy_logs_url: ""
+
+# Proxy HTTP(S) de salida para los dos endpoints, el token_url de OAuth2 y la
+# descarga del paquete. Vacío: sin proxy.
+alloy_proxy_url: ""
+alloy_no_proxy: ""
+
+# TLS: siempre se verifica. CA propia como PEM (el rol la escribe a un
+# archivo) o como ruta a un archivo que ya existe en el host.
+alloy_tls_ca_pem: ""
+alloy_tls_ca_file: ""
+# Desactiva la verificación del certificado. Solo para pruebas: el rol avisa.
+alloy_tls_insecure_skip_verify: false
+
+# Autenticación común a los dos endpoints.
+# type: none | basic | bearer | header | oauth2
+# Los secretos (password, token, header_value, client_secret) se pasan
+# cifrados (ansible-vault o sops) y nunca se escriben en la config principal.
+alloy_auth:
+  type: none
+  username: ""
+  password: ""
+  token: ""
+  header_name: ""
+  header_value: ""
+  oauth2:
+    token_url: ""
+    client_id: ""
+    client_secret: ""
+    scopes: []
+# Campos que pisan alloy_auth solo para un endpoint. Por ejemplo, en Grafana
+# Cloud métricas y logs tienen usuarios distintos:
+#   alloy_metrics_auth: {username: "1234567"}
+#   alloy_logs_auth: {username: "765432"}
+alloy_metrics_auth: {}
+alloy_logs_auth: {}
+
+# --- Labels comunes --------------------------------------------------------
+# Obligatorias. Van en todas las series y streams junto con host y os.
+alloy_labels_cliente: ""
+alloy_labels_entorno: ""
+alloy_labels_host: "{{ inventory_hostname }}"
+# Labels extra (dict). Cuidado con la cardinalidad.
+alloy_extra_labels: {}
+
+# --- Métricas de host --------------------------------------------------------
+alloy_scrape_interval: "60s"
+alloy_host_metrics_enabled: true
+# Collectors de prometheus.exporter.unix. "systemd" se suma solo cuando hay
+# units vigiladas.
+alloy_unix_collectors:
+  - cpu
+  - loadavg
+  - meminfo
+  - filesystem
+  - diskstats
+  - netdev
+  - uname
+  - os
+  - time
+  - timex
+  - boottime
+  - textfile
+alloy_netdev_device_exclude: "^(lo|veth.*|docker.*|br-.*|cali.*)$"
+
+# Allowlist de nombres de métrica. Lo que no matchea se descarta antes de
+# enviar. Se arma con una lista para que se pueda leer y extender.
+alloy_metrics_allowlist_items:
+  - up
+  # Self-monitoring de Alloy.
+  - alloy_build_info
+  - prometheus_remote_storage_.*
+  - loki_write_.*
+alloy_metrics_allowlist: "{{ alloy_metrics_allowlist_items | join('|') }}"
+
+# Directorio del textfile collector. El mismo que usa mikroways.restic
+# (restic_prometheus_exporter_metrics_basedir).
+alloy_textfile_directory: /var/lib/node_exporter
+# Métricas de textfile permitidas (regex de nombre).
+alloy_textfile_allowlist: "restic_.*|kopia_.*|backup_.*"
+
+# --- Servicios y procesos ----------------------------------------------------
+# Units de systemd que tienen que estar activas.
+alloy_systemd_units: []
+# Agrega node_systemd_service_restart_total.
+alloy_systemd_restarts: false
+# Detecta la unit de NTP (chrony, systemd-timesyncd o ntpd) y la vigila.
+alloy_ntp_autodetect: true
+# Procesos que no son units: [{name: ..., cmdline_regex: ...}]
+alloy_processes: []
+
+# --- Teleport --------------------------------------------------------------
+# auto: se prende si existe teleport.service. true | false fuerzan.
+alloy_teleport_enabled: auto
+# diag_addr del agente (ej. 127.0.0.1:3000). Vacío: no se scrapean métricas.
+alloy_teleport_diag_addr: ""
+
+# --- Logs --------------------------------------------------------------------
+alloy_logs_journal_enabled: true
+# Prioridad mínima que se envía: emerg, alert, crit, err, warning, notice,
+# info, debug. "warning" envía de emerg a warning.
+alloy_logs_min_priority: warning
+# En la primera corrida no se manda historial más viejo que esto.
+alloy_logs_journal_max_age: "12h"
+# Archivos de log: [{path: "/var/log/app/*.log", labels: {app: x},
+#                    level_regex: "(?i)error"}]
+alloy_log_files: []
+alloy_log_files_default_level_regex: '(?i)\b(warn(ing)?|err(or)?|crit(ical)?|fatal|alert|emerg(ency)?)\b'
+
+# --- Varios ----------------------------------------------------------------
+alloy_self_monitoring_enabled: true
+# Archivos .alloy propios: [{name: mi-pipeline, content: "..."}]
+alloy_extra_config_files: []
+# Grupos extra para el usuario alloy (por ejemplo, para leer logs de una app).
+alloy_extra_groups: []
+# En alloy_state: absent, borrar también el usuario y el grupo alloy.
+alloy_remove_user: false

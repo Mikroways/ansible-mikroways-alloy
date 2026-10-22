@@ -1,0 +1,441 @@
+---
+# Prueba las validaciones de tasks/assert.yml sin tocar el host.
+# Uso: uv run ansible-playbook -i tests/inventory tests/asserts.yml
+- name: Validaciones del rol alloy
+  hosts: localhost
+  gather_facts: true
+  vars:
+    _role_path: "{{ playbook_dir | dirname }}"
+    _validos:
+      alloy_labels_cliente: test
+      alloy_labels_entorno: ci
+      alloy_metrics_url: https://receiver.test/api/prom/push
+      alloy_logs_url: https://receiver.test/loki/api/v1/push
+      alloy_auth:
+        type: basic
+        username: u
+        password: p
+  tasks:
+    - name: "Caso: falta alloy_labels_cliente"
+      block:
+        - name: Incluir las validaciones
+          ansible.builtin.include_role:
+            name: "{{ _role_path }}"
+            tasks_from: assert
+          vars:
+            _caso: {"alloy_labels_cliente": ""}
+            alloy_labels_cliente: "{{ _caso.alloy_labels_cliente | default(_validos.alloy_labels_cliente) }}"
+            alloy_labels_entorno: "{{ _caso.alloy_labels_entorno | default(_validos.alloy_labels_entorno) }}"
+            alloy_metrics_url: "{{ _caso.alloy_metrics_url | default(_validos.alloy_metrics_url) }}"
+            alloy_logs_url: "{{ _caso.alloy_logs_url | default(_validos.alloy_logs_url) }}"
+            alloy_auth: "{{ _caso.alloy_auth | default(_validos.alloy_auth) }}"
+            alloy_logs_min_priority: "{{ _caso.alloy_logs_min_priority | default('warning') }}"
+            alloy_version: "{{ _caso.alloy_version | default('1.21.1') }}"
+            alloy_state: "{{ _caso.alloy_state | default('present') }}"
+            _alloy_distribution: "{{ _caso._alloy_distribution | default(ansible_facts['distribution']) }}"
+            _alloy_distribution_major: "{{ _caso._alloy_distribution_major | default(ansible_facts['distribution_major_version']) }}"
+        - name: Fallar si la validación no frenó
+          ansible.builtin.fail:
+            msg: "La validación no frenó"
+      rescue:
+        - name: Verificar el mensaje
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is defined
+              - "'alloy_labels_cliente es obligatoria' in ansible_failed_result.msg"
+            fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
+            quiet: true
+    - name: "Caso: falta alloy_labels_entorno"
+      block:
+        - name: Incluir las validaciones
+          ansible.builtin.include_role:
+            name: "{{ _role_path }}"
+            tasks_from: assert
+          vars:
+            _caso: {"alloy_labels_entorno": ""}
+            alloy_labels_cliente: "{{ _caso.alloy_labels_cliente | default(_validos.alloy_labels_cliente) }}"
+            alloy_labels_entorno: "{{ _caso.alloy_labels_entorno | default(_validos.alloy_labels_entorno) }}"
+            alloy_metrics_url: "{{ _caso.alloy_metrics_url | default(_validos.alloy_metrics_url) }}"
+            alloy_logs_url: "{{ _caso.alloy_logs_url | default(_validos.alloy_logs_url) }}"
+            alloy_auth: "{{ _caso.alloy_auth | default(_validos.alloy_auth) }}"
+            alloy_logs_min_priority: "{{ _caso.alloy_logs_min_priority | default('warning') }}"
+            alloy_version: "{{ _caso.alloy_version | default('1.21.1') }}"
+            alloy_state: "{{ _caso.alloy_state | default('present') }}"
+            _alloy_distribution: "{{ _caso._alloy_distribution | default(ansible_facts['distribution']) }}"
+            _alloy_distribution_major: "{{ _caso._alloy_distribution_major | default(ansible_facts['distribution_major_version']) }}"
+        - name: Fallar si la validación no frenó
+          ansible.builtin.fail:
+            msg: "La validación no frenó"
+      rescue:
+        - name: Verificar el mensaje
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is defined
+              - "'alloy_labels_entorno es obligatoria' in ansible_failed_result.msg"
+            fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
+            quiet: true
+    - name: "Caso: alloy_metrics_url vacía"
+      block:
+        - name: Incluir las validaciones
+          ansible.builtin.include_role:
+            name: "{{ _role_path }}"
+            tasks_from: assert
+          vars:
+            _caso: {"alloy_metrics_url": ""}
+            alloy_labels_cliente: "{{ _caso.alloy_labels_cliente | default(_validos.alloy_labels_cliente) }}"
+            alloy_labels_entorno: "{{ _caso.alloy_labels_entorno | default(_validos.alloy_labels_entorno) }}"
+            alloy_metrics_url: "{{ _caso.alloy_metrics_url | default(_validos.alloy_metrics_url) }}"
+            alloy_logs_url: "{{ _caso.alloy_logs_url | default(_validos.alloy_logs_url) }}"
+            alloy_auth: "{{ _caso.alloy_auth | default(_validos.alloy_auth) }}"
+            alloy_logs_min_priority: "{{ _caso.alloy_logs_min_priority | default('warning') }}"
+            alloy_version: "{{ _caso.alloy_version | default('1.21.1') }}"
+            alloy_state: "{{ _caso.alloy_state | default('present') }}"
+            _alloy_distribution: "{{ _caso._alloy_distribution | default(ansible_facts['distribution']) }}"
+            _alloy_distribution_major: "{{ _caso._alloy_distribution_major | default(ansible_facts['distribution_major_version']) }}"
+        - name: Fallar si la validación no frenó
+          ansible.builtin.fail:
+            msg: "La validación no frenó"
+      rescue:
+        - name: Verificar el mensaje
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is defined
+              - "'alloy_metrics_url es obligatoria' in ansible_failed_result.msg"
+            fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
+            quiet: true
+    - name: "Caso: alloy_logs_url vacía con logs encendidos"
+      block:
+        - name: Incluir las validaciones
+          ansible.builtin.include_role:
+            name: "{{ _role_path }}"
+            tasks_from: assert
+          vars:
+            _caso: {"alloy_logs_url": ""}
+            alloy_labels_cliente: "{{ _caso.alloy_labels_cliente | default(_validos.alloy_labels_cliente) }}"
+            alloy_labels_entorno: "{{ _caso.alloy_labels_entorno | default(_validos.alloy_labels_entorno) }}"
+            alloy_metrics_url: "{{ _caso.alloy_metrics_url | default(_validos.alloy_metrics_url) }}"
+            alloy_logs_url: "{{ _caso.alloy_logs_url | default(_validos.alloy_logs_url) }}"
+            alloy_auth: "{{ _caso.alloy_auth | default(_validos.alloy_auth) }}"
+            alloy_logs_min_priority: "{{ _caso.alloy_logs_min_priority | default('warning') }}"
+            alloy_version: "{{ _caso.alloy_version | default('1.21.1') }}"
+            alloy_state: "{{ _caso.alloy_state | default('present') }}"
+            _alloy_distribution: "{{ _caso._alloy_distribution | default(ansible_facts['distribution']) }}"
+            _alloy_distribution_major: "{{ _caso._alloy_distribution_major | default(ansible_facts['distribution_major_version']) }}"
+        - name: Fallar si la validación no frenó
+          ansible.builtin.fail:
+            msg: "La validación no frenó"
+      rescue:
+        - name: Verificar el mensaje
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is defined
+              - "'alloy_logs_url es obligatoria' in ansible_failed_result.msg"
+            fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
+            quiet: true
+    - name: "Caso: auth type inválido"
+      block:
+        - name: Incluir las validaciones
+          ansible.builtin.include_role:
+            name: "{{ _role_path }}"
+            tasks_from: assert
+          vars:
+            _caso: {"alloy_auth": {"type": "foo"}}
+            alloy_labels_cliente: "{{ _caso.alloy_labels_cliente | default(_validos.alloy_labels_cliente) }}"
+            alloy_labels_entorno: "{{ _caso.alloy_labels_entorno | default(_validos.alloy_labels_entorno) }}"
+            alloy_metrics_url: "{{ _caso.alloy_metrics_url | default(_validos.alloy_metrics_url) }}"
+            alloy_logs_url: "{{ _caso.alloy_logs_url | default(_validos.alloy_logs_url) }}"
+            alloy_auth: "{{ _caso.alloy_auth | default(_validos.alloy_auth) }}"
+            alloy_logs_min_priority: "{{ _caso.alloy_logs_min_priority | default('warning') }}"
+            alloy_version: "{{ _caso.alloy_version | default('1.21.1') }}"
+            alloy_state: "{{ _caso.alloy_state | default('present') }}"
+            _alloy_distribution: "{{ _caso._alloy_distribution | default(ansible_facts['distribution']) }}"
+            _alloy_distribution_major: "{{ _caso._alloy_distribution_major | default(ansible_facts['distribution_major_version']) }}"
+        - name: Fallar si la validación no frenó
+          ansible.builtin.fail:
+            msg: "La validación no frenó"
+      rescue:
+        - name: Verificar el mensaje
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is defined
+              - "'alloy_auth.type debe ser uno de none, basic, bearer, header, oauth2' in ansible_failed_result.msg"
+            fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
+            quiet: true
+    - name: "Caso: basic sin password"
+      block:
+        - name: Incluir las validaciones
+          ansible.builtin.include_role:
+            name: "{{ _role_path }}"
+            tasks_from: assert
+          vars:
+            _caso: {"alloy_auth": {"type": "basic", "username": "u"}}
+            alloy_labels_cliente: "{{ _caso.alloy_labels_cliente | default(_validos.alloy_labels_cliente) }}"
+            alloy_labels_entorno: "{{ _caso.alloy_labels_entorno | default(_validos.alloy_labels_entorno) }}"
+            alloy_metrics_url: "{{ _caso.alloy_metrics_url | default(_validos.alloy_metrics_url) }}"
+            alloy_logs_url: "{{ _caso.alloy_logs_url | default(_validos.alloy_logs_url) }}"
+            alloy_auth: "{{ _caso.alloy_auth | default(_validos.alloy_auth) }}"
+            alloy_logs_min_priority: "{{ _caso.alloy_logs_min_priority | default('warning') }}"
+            alloy_version: "{{ _caso.alloy_version | default('1.21.1') }}"
+            alloy_state: "{{ _caso.alloy_state | default('present') }}"
+            _alloy_distribution: "{{ _caso._alloy_distribution | default(ansible_facts['distribution']) }}"
+            _alloy_distribution_major: "{{ _caso._alloy_distribution_major | default(ansible_facts['distribution_major_version']) }}"
+        - name: Fallar si la validación no frenó
+          ansible.builtin.fail:
+            msg: "La validación no frenó"
+      rescue:
+        - name: Verificar el mensaje
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is defined
+              - "'basic requiere username y password' in ansible_failed_result.msg"
+            fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
+            quiet: true
+    - name: "Caso: bearer sin token"
+      block:
+        - name: Incluir las validaciones
+          ansible.builtin.include_role:
+            name: "{{ _role_path }}"
+            tasks_from: assert
+          vars:
+            _caso: {"alloy_auth": {"type": "bearer"}}
+            alloy_labels_cliente: "{{ _caso.alloy_labels_cliente | default(_validos.alloy_labels_cliente) }}"
+            alloy_labels_entorno: "{{ _caso.alloy_labels_entorno | default(_validos.alloy_labels_entorno) }}"
+            alloy_metrics_url: "{{ _caso.alloy_metrics_url | default(_validos.alloy_metrics_url) }}"
+            alloy_logs_url: "{{ _caso.alloy_logs_url | default(_validos.alloy_logs_url) }}"
+            alloy_auth: "{{ _caso.alloy_auth | default(_validos.alloy_auth) }}"
+            alloy_logs_min_priority: "{{ _caso.alloy_logs_min_priority | default('warning') }}"
+            alloy_version: "{{ _caso.alloy_version | default('1.21.1') }}"
+            alloy_state: "{{ _caso.alloy_state | default('present') }}"
+            _alloy_distribution: "{{ _caso._alloy_distribution | default(ansible_facts['distribution']) }}"
+            _alloy_distribution_major: "{{ _caso._alloy_distribution_major | default(ansible_facts['distribution_major_version']) }}"
+        - name: Fallar si la validación no frenó
+          ansible.builtin.fail:
+            msg: "La validación no frenó"
+      rescue:
+        - name: Verificar el mensaje
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is defined
+              - "'bearer requiere token' in ansible_failed_result.msg"
+            fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
+            quiet: true
+    - name: "Caso: header sin valor"
+      block:
+        - name: Incluir las validaciones
+          ansible.builtin.include_role:
+            name: "{{ _role_path }}"
+            tasks_from: assert
+          vars:
+            _caso: {"alloy_auth": {"type": "header", "header_name": "X-Api-Key"}}
+            alloy_labels_cliente: "{{ _caso.alloy_labels_cliente | default(_validos.alloy_labels_cliente) }}"
+            alloy_labels_entorno: "{{ _caso.alloy_labels_entorno | default(_validos.alloy_labels_entorno) }}"
+            alloy_metrics_url: "{{ _caso.alloy_metrics_url | default(_validos.alloy_metrics_url) }}"
+            alloy_logs_url: "{{ _caso.alloy_logs_url | default(_validos.alloy_logs_url) }}"
+            alloy_auth: "{{ _caso.alloy_auth | default(_validos.alloy_auth) }}"
+            alloy_logs_min_priority: "{{ _caso.alloy_logs_min_priority | default('warning') }}"
+            alloy_version: "{{ _caso.alloy_version | default('1.21.1') }}"
+            alloy_state: "{{ _caso.alloy_state | default('present') }}"
+            _alloy_distribution: "{{ _caso._alloy_distribution | default(ansible_facts['distribution']) }}"
+            _alloy_distribution_major: "{{ _caso._alloy_distribution_major | default(ansible_facts['distribution_major_version']) }}"
+        - name: Fallar si la validación no frenó
+          ansible.builtin.fail:
+            msg: "La validación no frenó"
+      rescue:
+        - name: Verificar el mensaje
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is defined
+              - "'header requiere header_name y header_value' in ansible_failed_result.msg"
+            fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
+            quiet: true
+    - name: "Caso: oauth2 sin client_secret"
+      block:
+        - name: Incluir las validaciones
+          ansible.builtin.include_role:
+            name: "{{ _role_path }}"
+            tasks_from: assert
+          vars:
+            _caso: {"alloy_auth": {"type": "oauth2", "oauth2": {"token_url": "https://t/token", "client_id": "c"}}}
+            alloy_labels_cliente: "{{ _caso.alloy_labels_cliente | default(_validos.alloy_labels_cliente) }}"
+            alloy_labels_entorno: "{{ _caso.alloy_labels_entorno | default(_validos.alloy_labels_entorno) }}"
+            alloy_metrics_url: "{{ _caso.alloy_metrics_url | default(_validos.alloy_metrics_url) }}"
+            alloy_logs_url: "{{ _caso.alloy_logs_url | default(_validos.alloy_logs_url) }}"
+            alloy_auth: "{{ _caso.alloy_auth | default(_validos.alloy_auth) }}"
+            alloy_logs_min_priority: "{{ _caso.alloy_logs_min_priority | default('warning') }}"
+            alloy_version: "{{ _caso.alloy_version | default('1.21.1') }}"
+            alloy_state: "{{ _caso.alloy_state | default('present') }}"
+            _alloy_distribution: "{{ _caso._alloy_distribution | default(ansible_facts['distribution']) }}"
+            _alloy_distribution_major: "{{ _caso._alloy_distribution_major | default(ansible_facts['distribution_major_version']) }}"
+        - name: Fallar si la validación no frenó
+          ansible.builtin.fail:
+            msg: "La validación no frenó"
+      rescue:
+        - name: Verificar el mensaje
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is defined
+              - "'oauth2 requiere token_url, client_id y client_secret' in ansible_failed_result.msg"
+            fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
+            quiet: true
+    - name: "Caso: prioridad inválida"
+      block:
+        - name: Incluir las validaciones
+          ansible.builtin.include_role:
+            name: "{{ _role_path }}"
+            tasks_from: assert
+          vars:
+            _caso: {"alloy_logs_min_priority": "loud"}
+            alloy_labels_cliente: "{{ _caso.alloy_labels_cliente | default(_validos.alloy_labels_cliente) }}"
+            alloy_labels_entorno: "{{ _caso.alloy_labels_entorno | default(_validos.alloy_labels_entorno) }}"
+            alloy_metrics_url: "{{ _caso.alloy_metrics_url | default(_validos.alloy_metrics_url) }}"
+            alloy_logs_url: "{{ _caso.alloy_logs_url | default(_validos.alloy_logs_url) }}"
+            alloy_auth: "{{ _caso.alloy_auth | default(_validos.alloy_auth) }}"
+            alloy_logs_min_priority: "{{ _caso.alloy_logs_min_priority | default('warning') }}"
+            alloy_version: "{{ _caso.alloy_version | default('1.21.1') }}"
+            alloy_state: "{{ _caso.alloy_state | default('present') }}"
+            _alloy_distribution: "{{ _caso._alloy_distribution | default(ansible_facts['distribution']) }}"
+            _alloy_distribution_major: "{{ _caso._alloy_distribution_major | default(ansible_facts['distribution_major_version']) }}"
+        - name: Fallar si la validación no frenó
+          ansible.builtin.fail:
+            msg: "La validación no frenó"
+      rescue:
+        - name: Verificar el mensaje
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is defined
+              - "'alloy_logs_min_priority inválida' in ansible_failed_result.msg"
+            fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
+            quiet: true
+    - name: "Caso: versión latest"
+      block:
+        - name: Incluir las validaciones
+          ansible.builtin.include_role:
+            name: "{{ _role_path }}"
+            tasks_from: assert
+          vars:
+            _caso: {"alloy_version": "latest"}
+            alloy_labels_cliente: "{{ _caso.alloy_labels_cliente | default(_validos.alloy_labels_cliente) }}"
+            alloy_labels_entorno: "{{ _caso.alloy_labels_entorno | default(_validos.alloy_labels_entorno) }}"
+            alloy_metrics_url: "{{ _caso.alloy_metrics_url | default(_validos.alloy_metrics_url) }}"
+            alloy_logs_url: "{{ _caso.alloy_logs_url | default(_validos.alloy_logs_url) }}"
+            alloy_auth: "{{ _caso.alloy_auth | default(_validos.alloy_auth) }}"
+            alloy_logs_min_priority: "{{ _caso.alloy_logs_min_priority | default('warning') }}"
+            alloy_version: "{{ _caso.alloy_version | default('1.21.1') }}"
+            alloy_state: "{{ _caso.alloy_state | default('present') }}"
+            _alloy_distribution: "{{ _caso._alloy_distribution | default(ansible_facts['distribution']) }}"
+            _alloy_distribution_major: "{{ _caso._alloy_distribution_major | default(ansible_facts['distribution_major_version']) }}"
+        - name: Fallar si la validación no frenó
+          ansible.builtin.fail:
+            msg: "La validación no frenó"
+      rescue:
+        - name: Verificar el mensaje
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is defined
+              - "'alloy_version debe ser una versión fija' in ansible_failed_result.msg"
+            fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
+            quiet: true
+    - name: "Caso: SO no soportado"
+      block:
+        - name: Incluir las validaciones
+          ansible.builtin.include_role:
+            name: "{{ _role_path }}"
+            tasks_from: assert
+          vars:
+            _caso: {"_alloy_distribution": "Gentoo"}
+            alloy_labels_cliente: "{{ _caso.alloy_labels_cliente | default(_validos.alloy_labels_cliente) }}"
+            alloy_labels_entorno: "{{ _caso.alloy_labels_entorno | default(_validos.alloy_labels_entorno) }}"
+            alloy_metrics_url: "{{ _caso.alloy_metrics_url | default(_validos.alloy_metrics_url) }}"
+            alloy_logs_url: "{{ _caso.alloy_logs_url | default(_validos.alloy_logs_url) }}"
+            alloy_auth: "{{ _caso.alloy_auth | default(_validos.alloy_auth) }}"
+            alloy_logs_min_priority: "{{ _caso.alloy_logs_min_priority | default('warning') }}"
+            alloy_version: "{{ _caso.alloy_version | default('1.21.1') }}"
+            alloy_state: "{{ _caso.alloy_state | default('present') }}"
+            _alloy_distribution: "{{ _caso._alloy_distribution | default(ansible_facts['distribution']) }}"
+            _alloy_distribution_major: "{{ _caso._alloy_distribution_major | default(ansible_facts['distribution_major_version']) }}"
+        - name: Fallar si la validación no frenó
+          ansible.builtin.fail:
+            msg: "La validación no frenó"
+      rescue:
+        - name: Verificar el mensaje
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is defined
+              - "'SO no soportado' in ansible_failed_result.msg"
+            fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
+            quiet: true
+    - name: "Caso: Ubuntu 18 no soportado"
+      block:
+        - name: Incluir las validaciones
+          ansible.builtin.include_role:
+            name: "{{ _role_path }}"
+            tasks_from: assert
+          vars:
+            _caso: {"_alloy_distribution": "Ubuntu", "_alloy_distribution_major": "18"}
+            alloy_labels_cliente: "{{ _caso.alloy_labels_cliente | default(_validos.alloy_labels_cliente) }}"
+            alloy_labels_entorno: "{{ _caso.alloy_labels_entorno | default(_validos.alloy_labels_entorno) }}"
+            alloy_metrics_url: "{{ _caso.alloy_metrics_url | default(_validos.alloy_metrics_url) }}"
+            alloy_logs_url: "{{ _caso.alloy_logs_url | default(_validos.alloy_logs_url) }}"
+            alloy_auth: "{{ _caso.alloy_auth | default(_validos.alloy_auth) }}"
+            alloy_logs_min_priority: "{{ _caso.alloy_logs_min_priority | default('warning') }}"
+            alloy_version: "{{ _caso.alloy_version | default('1.21.1') }}"
+            alloy_state: "{{ _caso.alloy_state | default('present') }}"
+            _alloy_distribution: "{{ _caso._alloy_distribution | default(ansible_facts['distribution']) }}"
+            _alloy_distribution_major: "{{ _caso._alloy_distribution_major | default(ansible_facts['distribution_major_version']) }}"
+        - name: Fallar si la validación no frenó
+          ansible.builtin.fail:
+            msg: "La validación no frenó"
+      rescue:
+        - name: Verificar el mensaje
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is defined
+              - "'SO no soportado' in ansible_failed_result.msg"
+            fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
+            quiet: true
+    - name: "Caso: state inválido"
+      block:
+        - name: Incluir las validaciones
+          ansible.builtin.include_role:
+            name: "{{ _role_path }}"
+            tasks_from: assert
+          vars:
+            _caso: {"alloy_state": "latest"}
+            alloy_labels_cliente: "{{ _caso.alloy_labels_cliente | default(_validos.alloy_labels_cliente) }}"
+            alloy_labels_entorno: "{{ _caso.alloy_labels_entorno | default(_validos.alloy_labels_entorno) }}"
+            alloy_metrics_url: "{{ _caso.alloy_metrics_url | default(_validos.alloy_metrics_url) }}"
+            alloy_logs_url: "{{ _caso.alloy_logs_url | default(_validos.alloy_logs_url) }}"
+            alloy_auth: "{{ _caso.alloy_auth | default(_validos.alloy_auth) }}"
+            alloy_logs_min_priority: "{{ _caso.alloy_logs_min_priority | default('warning') }}"
+            alloy_version: "{{ _caso.alloy_version | default('1.21.1') }}"
+            alloy_state: "{{ _caso.alloy_state | default('present') }}"
+            _alloy_distribution: "{{ _caso._alloy_distribution | default(ansible_facts['distribution']) }}"
+            _alloy_distribution_major: "{{ _caso._alloy_distribution_major | default(ansible_facts['distribution_major_version']) }}"
+        - name: Fallar si la validación no frenó
+          ansible.builtin.fail:
+            msg: "La validación no frenó"
+      rescue:
+        - name: Verificar el mensaje
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is defined
+              - "'alloy_state debe ser present o absent' in ansible_failed_result.msg"
+            fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
+            quiet: true
+    - name: "Caso: variables válidas no fallan"
+      ansible.builtin.include_role:
+        name: "{{ _role_path }}"
+        tasks_from: assert
+      vars:
+        alloy_labels_cliente: test
+        alloy_labels_entorno: ci
+        alloy_metrics_url: https://receiver.test/api/prom/push
+        alloy_logs_url: https://receiver.test/loki/api/v1/push
+        alloy_auth: "{{ _validos.alloy_auth }}"
+
+    - name: "Caso: absent no exige labels ni URLs"
+      ansible.builtin.include_role:
+        name: "{{ _role_path }}"
+        tasks_from: assert
+      vars:
+        alloy_state: absent

@@ -1,0 +1,16 @@
+---
+- name: Validar variables
+  ansible.builtin.import_tasks: assert.yml
+
+- name: Instalar y configurar Alloy
+  when: alloy_state == 'present'
+  block:
+    - name: Instalar Alloy
+      ansible.builtin.include_tasks: linux/install.yml
+
+    - name: Configurar Alloy
+      ansible.builtin.include_tasks: linux/configure.yml
+
+- name: Desinstalar Alloy
+  ansible.builtin.include_tasks: linux/uninstall.yml
+  when: alloy_state == 'absent'

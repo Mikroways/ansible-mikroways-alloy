@@ -1,0 +1,14 @@
+[project]
+name = "ansible-mikroways-alloy"
+version = "0.1.0"
+description = "Rol de Ansible que instala y configura Grafana Alloy"
+requires-python = ">=3.12"
+dependencies = [
+    "ansible-core>=2.19,<2.21",
+    "ansible-lint>=25.0",
+    "docker>=7.0",
+    "molecule>=25.0",
+    "molecule-plugins[docker]>=25.8.12",
+    "requests>=2.32",
+    "yamllint>=1.35",
+]

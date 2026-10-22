@@ -1,0 +1,10 @@
+---
+profile: production
+exclude_paths:
+  - .venv/
+  - .ansible/
+  - .github/
+  - docs/
+skip_list:
+  # Los nombres de variables internas empiezan con _alloy_.
+  - var-naming[no-role-prefix]

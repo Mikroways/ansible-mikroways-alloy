@@ -1,0 +1,33 @@
+---
+# Valida la auth efectiva de un endpoint (_alloy_endpoint.endpoint/auth).
+# Ningún mensaje incluye valores de secretos.
+- name: "Validar tipo de auth ({{ _alloy_endpoint.endpoint }})"
+  ansible.builtin.assert:
+    that: _alloy_endpoint.auth.type | default('none') in _alloy_auth_types
+    fail_msg: >-
+      {{ _alloy_endpoint.endpoint }}: alloy_auth.type debe ser uno de
+      {{ _alloy_auth_types | join(', ') }}
+    quiet: true
+
+- name: "Validar campos de auth ({{ _alloy_endpoint.endpoint }})"
+  ansible.builtin.assert:
+    that: _checks[_type] | default(true)
+    fail_msg: "{{ _alloy_endpoint.endpoint }}: {{ _msgs[_type] }}"
+    quiet: true
+  vars:
+    _a: "{{ _alloy_endpoint.auth }}"
+    _type: "{{ _a.type | default('none') }}"
+    _checks:
+      basic: "{{ (_a.username | default('') | length > 0) and (_a.password | default('') | length > 0) }}"
+      bearer: "{{ _a.token | default('') | length > 0 }}"
+      header: "{{ (_a.header_name | default('') | length > 0) and (_a.header_value | default('') | length > 0) }}"
+      oauth2: >-
+        {{ (_a.oauth2.token_url | default('') | length > 0)
+           and (_a.oauth2.client_id | default('') | length > 0)
+           and (_a.oauth2.client_secret | default('') | length > 0) }}
+    _msgs:
+      basic: basic requiere username y password
+      bearer: bearer requiere token
+      header: header requiere header_name y header_value
+      oauth2: oauth2 requiere token_url, client_id y client_secret
+  when: _type != 'none'
