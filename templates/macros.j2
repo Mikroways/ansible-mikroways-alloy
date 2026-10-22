@@ -1,0 +1,58 @@
+{#- Bloques comunes de un endpoint (URL, auth, proxy y TLS). -#}
+{% macro tls_block(indent) -%}
+{{ indent }}tls_config {
+{% if _alloy_ca_file | length > 0 %}
+{{ indent }}  ca_file              = {{ _alloy_ca_file | to_json }}
+{% endif %}
+{{ indent }}  insecure_skip_verify = {{ alloy_tls_insecure_skip_verify | bool | lower }}
+{{ indent }}}
+{%- endmacro %}
+
+{% macro proxy_args(indent) -%}
+{% if alloy_proxy_url | length > 0 %}
+{{ indent }}proxy_url = {{ alloy_proxy_url | to_json }}
+{% if alloy_no_proxy | length > 0 %}
+{{ indent }}no_proxy  = {{ alloy_no_proxy | to_json }}
+{% endif %}
+{% endif %}
+{%- endmacro %}
+
+{% macro endpoint(ep, auth, url) -%}
+endpoint {
+    url = {{ url | to_json }}
+{% if auth.type == 'basic' %}
+    basic_auth {
+      username      = {{ auth.username | to_json }}
+      password_file = {{ (_alloy_secrets_dir ~ '/' ~ ep ~ '_password') | to_json }}
+    }
+{% elif auth.type == 'bearer' %}
+    bearer_token_file = {{ (_alloy_secrets_dir ~ '/' ~ ep ~ '_token') | to_json }}
+{% elif auth.type == 'header' %}
+    http_headers = { {{ auth.header_name | to_json }} = [local.file.{{ ep }}_header.content] }
+{% elif auth.type == 'oauth2' %}
+    oauth2 {
+      client_id          = {{ auth.oauth2.client_id | to_json }}
+      client_secret_file = {{ (_alloy_secrets_dir ~ '/' ~ ep ~ '_client_secret') | to_json }}
+      token_url          = {{ auth.oauth2.token_url | to_json }}
+      scopes             = {{ auth.oauth2.scopes | default([]) | to_json }}
+{{ proxy_args('      ') }}
+{{ tls_block('      ') }}
+    }
+{% endif %}
+{{ proxy_args('    ') }}
+{{ tls_block('    ') }}
+  }
+{%- endmacro %}
+
+{% macro header_secret(ep, auth) -%}
+{% if auth.type == 'header' %}
+local.file "{{ ep }}_header" {
+  filename  = {{ (_alloy_secrets_dir ~ '/' ~ ep ~ '_header') | to_json }}
+  is_secret = true
+}
+{% endif %}
+{%- endmacro %}
+
+{% macro labels_map(d) -%}
+{ {% for k, v in d.items() %}{{ k | to_json }} = {{ v | string | to_json }}{{ ', ' if not loop.last }}{% endfor %} }
+{%- endmacro %}

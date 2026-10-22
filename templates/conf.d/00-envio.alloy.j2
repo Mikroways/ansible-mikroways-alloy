@@ -1,0 +1,33 @@
+// {{ ansible_managed }}
+// Envío de métricas y logs, labels comunes y allowlist (rol mikroways.alloy).
+{% import 'macros.j2' as m with context %}
+
+{{ m.header_secret('metrics', _alloy_auth_metrics) }}
+prometheus.remote_write "default" {
+  external_labels = {{ m.labels_map(_alloy_common_labels) }}
+  {{ m.endpoint('metrics', _alloy_auth_metrics, alloy_metrics_url) }}
+}
+
+// Todas las señales de métricas pasan por acá: allowlist e instance = host.
+prometheus.relabel "comun" {
+  forward_to = [prometheus.remote_write.default.receiver]
+
+  rule {
+    source_labels = ["__name__"]
+    regex         = {{ alloy_metrics_allowlist | to_json }}
+    action        = "keep"
+  }
+
+  rule {
+    target_label = "instance"
+    replacement  = {{ alloy_labels_host | string | to_json }}
+  }
+}
+{% if _alloy_logs_on | bool %}
+
+{{ m.header_secret('logs', _alloy_auth_logs) }}
+loki.write "default" {
+  external_labels = {{ m.labels_map(_alloy_common_labels) }}
+  {{ m.endpoint('logs', _alloy_auth_logs, alloy_logs_url) }}
+}
+{% endif %}

@@ -8,6 +8,7 @@
         name: "{{ item }}"
         state: absent
         force_kill: true
+        keep_volumes: false
       loop:
         - alloy-test-receiver
         - alloy-test-proxy

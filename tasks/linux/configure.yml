@@ -1,3 +1,109 @@
 ---
-# Se implementa en las tareas siguientes del plan.
-[]
+- name: Crear los directorios de config, secretos y staging
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: root
+    group: alloy
+    mode: "0750"
+  loop:
+    - "{{ _alloy_conf_dir }}"
+    - "{{ _alloy_secrets_dir }}"
+    - "{{ _alloy_staging_dir }}"
+  register: _alloy_dirs
+
+- name: Escribir los secretos
+  ansible.builtin.include_tasks: secrets.yml
+
+- name: Calcular los archivos de config esperados
+  ansible.builtin.set_fact:
+    _alloy_expected: >-
+      {{ (_alloy_conf_files + (alloy_extra_config_files | map(attribute='name') | list))
+         | map('regex_replace', '$', '.alloy') | list }}
+
+# 1. Todo se escribe primero en staging.
+- name: Renderizar la config en staging
+  ansible.builtin.template:
+    src: "conf.d/{{ item }}.alloy.j2"
+    dest: "{{ _alloy_staging_dir }}/{{ item }}.alloy"
+    owner: root
+    group: alloy
+    mode: "0640"
+  loop: "{{ _alloy_conf_files }}"
+
+- name: Escribir los archivos extra en staging
+  ansible.builtin.copy:
+    content: "{{ item.content }}"
+    dest: "{{ _alloy_staging_dir }}/{{ item.name }}.alloy"
+    owner: root
+    group: alloy
+    mode: "0640"
+  loop: "{{ alloy_extra_config_files }}"
+  loop_control:
+    label: "{{ item.name }}"
+
+- name: Listar staging
+  ansible.builtin.find:
+    paths: "{{ _alloy_staging_dir }}"
+    patterns: "*.alloy"
+  register: _alloy_staging_found
+
+- name: Borrar de staging lo que ya no se genera
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ _alloy_staging_found.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when: (item.path | basename) not in _alloy_expected
+
+# 2. Se valida el conjunto antes de tocar lo que lee el servicio. Corre
+# siempre (es de solo lectura): staging puede haber quedado con una config
+# inválida de una corrida anterior.
+- name: Validar la config completa con alloy validate
+  ansible.builtin.command:
+    cmd: "alloy validate {{ _alloy_staging_dir }}"
+  changed_when: false
+  when: not ansible_check_mode
+
+# 3. Recién ahora se sincroniza staging → conf.d.
+- name: Sincronizar staging con conf.d
+  ansible.builtin.copy:
+    src: "{{ _alloy_staging_dir }}/{{ item }}"
+    dest: "{{ _alloy_conf_dir }}/{{ item }}"
+    remote_src: true
+    owner: root
+    group: alloy
+    mode: "0640"
+  loop: "{{ _alloy_expected }}"
+  # En --check sobre un host nuevo staging todavía no existe.
+  when: not (ansible_check_mode and _alloy_dirs is changed)
+  notify: Reload alloy
+
+- name: Listar conf.d
+  ansible.builtin.find:
+    paths: "{{ _alloy_conf_dir }}"
+    patterns: "*.alloy"
+  register: _alloy_conf_found
+
+- name: Borrar de conf.d lo que no generó el rol
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ _alloy_conf_found.files }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when: (item.path | basename) not in _alloy_expected
+  notify: Reload alloy
+
+- name: Avisar que la verificación TLS está apagada
+  ansible.builtin.debug:
+    msg: "[WARNING] alloy_tls_insecure_skip_verify está en true: no se verifica el certificado del endpoint."
+  when: alloy_tls_insecure_skip_verify | bool
+
+- name: Asegurar que el servicio esté corriendo
+  ansible.builtin.systemd_service:
+    name: alloy
+    state: started
+    enabled: true
+  when: not (ansible_check_mode and _alloy_installed_version | length == 0)

@@ -56,3 +56,17 @@ _alloy_proxy_env: >-
      {'https_proxy': alloy_proxy_url, 'HTTPS_PROXY': alloy_proxy_url,
       'http_proxy': alloy_proxy_url, 'HTTP_PROXY': alloy_proxy_url,
       'no_proxy': alloy_no_proxy, 'NO_PROXY': alloy_no_proxy} }}
+
+# Labels comunes, como external_labels en métricas y logs.
+_alloy_common_labels: >-
+  {{ {'cliente': alloy_labels_cliente | string, 'entorno': alloy_labels_entorno | string,
+      'host': alloy_labels_host | string, 'os': 'linux'} | combine(alloy_extra_labels) }}
+
+# Archivos de config (sin extensión) que genera el rol en conf.d/.
+_alloy_conf_files: >-
+  {{ ['00-envio']
+     + (['90-self'] if alloy_self_monitoring_enabled | bool else []) }}
+
+# CA efectiva para TLS ("" = la del sistema).
+_alloy_ca_file: >-
+  {{ (_alloy_secrets_dir ~ '/ca.pem') if alloy_tls_ca_pem | length > 0 else alloy_tls_ca_file }}

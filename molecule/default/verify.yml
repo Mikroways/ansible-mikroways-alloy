@@ -28,4 +28,7 @@
       vars:
         _sel: 'cliente="test",entorno="ci",os="linux",host="{{ inventory_hostname }}"'
         verify_prom_queries:
-          - {query: 'alloy_build_info{ {{ _sel }},job="integrations/alloy"}', expect: present}
+          - {query: 'alloy_build_info{ {{ _sel }},job="integrations/alloy",instance="{{ inventory_hostname }}"}', expect: present}
+          - {query: 'prometheus_remote_storage_samples_total{ {{ _sel }} }', expect: present}
+          # Muestra reciente: después de rotar el password se sigue enviando.
+          - {query: '(time() - timestamp(alloy_build_info{ {{ _sel }} })) < 150', expect: present}
