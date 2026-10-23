@@ -18,6 +18,10 @@ jobs:
         uses: astral-sh/setup-uv@v5
       - name: Instalar dependencias
         run: uv sync
+      # ansible-lint resuelve los módulos de los playbooks de Molecule
+      # (community.docker): sin las colecciones falla el syntax-check.
+      - name: Instalar colecciones
+        run: uv run ansible-galaxy collection install -r meta/requirements.yml
       - name: yamllint
         run: uv run yamllint .
       - name: ansible-lint
