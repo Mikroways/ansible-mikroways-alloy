@@ -77,6 +77,7 @@
           - _avisos | select('search', 'no-existe.service') | select('search', 'sin sufijo') | list | length > 0
           - _avisos | select('search', 'alloy-test-dummy') | list | length == 0
           - _avisos | select('search', 'mnt-alloytest') | list | length == 0
+          - _avisos | select('search', 'alloy-test-alias') | list | length == 0
         fail_msg: "Avisos: {{ _avisos }}"
       vars:
         _avisos: "{{ ansible_facts.alloy_avisos | default([]) }}"
@@ -118,6 +119,8 @@
           # Units sin sufijo, timers y mounts.
           - {query: 'node_systemd_unit_state{ {{ _sel }},name="alloy-test-dummy.timer",state="active"} == 1', expect: present}
           - {query: 'node_systemd_unit_state{ {{ _sel }},name="mnt-alloytest.mount",state="active"} == 1', expect: present}
+          # Pedida por el alias: se vigila con el nombre canónico.
+          - {query: 'node_systemd_unit_state{ {{ _sel }},name="alloy-test-real.service",state="active"} == 1', expect: present}
           - {query: 'namedprocess_namegroup_num_procs{ {{ _sel }},groupname="sleep",job="integrations/process_exporter"} >= 1', expect: present}
           - {query: 'backup_test_last_success_timestamp_seconds{ {{ _sel }} }', expect: present}
           - {query: 'node_systemd_unit_state{ {{ _sel }},state="inactive"}', expect: absent}

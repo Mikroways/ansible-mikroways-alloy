@@ -66,10 +66,25 @@
       loop_control:
         label: "{{ item.name }}"
 
+    # Un alias (como sshd.service → ssh.service en Ubuntu): el collector solo
+    # reporta el nombre canónico.
+    - name: Crear una unit con alias
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/alloy-test-real.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Unit con alias de las pruebas del rol alloy
+          [Service]
+          ExecStart=/bin/sleep infinity
+          [Install]
+          WantedBy=multi-user.target
+          Alias=alloy-test-alias.service
+
     - name: Arrancar las units de prueba
       ansible.builtin.systemd_service:
         name: "{{ item }}"
         state: started
         enabled: true
         daemon_reload: true
-      loop: [ntpd.service, alloy-test-dummy.timer, mnt-alloytest.mount]
+      loop: [ntpd.service, alloy-test-dummy.timer, mnt-alloytest.mount, alloy-test-real.service]

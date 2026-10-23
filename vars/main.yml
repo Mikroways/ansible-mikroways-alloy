@@ -77,7 +77,7 @@ _alloy_services: "{{ ansible_facts.services | default({}) }}"
 # NTP: la primera candidata que está corriendo; si ninguna corre, la primera
 # instalada. Vigilar una instalada pero parada cuando corre otra da una falsa
 # alerta de "NTP caído".
-_alloy_ntp_candidates: [chrony.service, chronyd.service, systemd-timesyncd.service, ntpd.service, ntp.service]
+_alloy_ntp_candidates: [chrony.service, chronyd.service, systemd-timesyncd.service, ntpsec.service, ntpd.service, ntp.service]
 _alloy_ntp_unit_detected: >-
   {%- set inst = _alloy_ntp_candidates | select('in', _alloy_services) | list -%}
   {%- set run = inst | select('in', _alloy_services | dict2items
@@ -91,6 +91,17 @@ _alloy_systemd_units_norm: >-
   {{ alloy_systemd_units | map('string')
      | map('regex_replace', '^(?!.*\.(?:' ~ (_alloy_unit_types | join('|')) ~ ')$)(.+)$', '\1.service')
      | list }}
+
+# Resultado de systemctl show por unit pedida (detect.yml): nombre pedido, Id
+# canónico y si falta (rc != 0, not-found o sin Id).
+_alloy_units_info: >-
+  {%- set out = [] -%}
+  {%- for r in _alloy_units_show.results | default([]) -%}
+    {%- set id = (r.stdout | default('') | regex_findall('(?m)^Id=(.+)$') + [''])[0] -%}
+    {%- set missing = r.rc | default(1) != 0 or 'LoadState=not-found' in r.stdout | default('') or id | length == 0 -%}
+    {%- set _ = out.append({'name': r.item, 'id': id, 'missing': missing}) -%}
+  {%- endfor -%}
+  {{ out }}
 
 # No se pueden pisar con alloy_extra_labels.
 _alloy_reserved_labels: [cliente, entorno, host, os]

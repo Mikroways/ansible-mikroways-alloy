@@ -552,6 +552,31 @@
               - "'Cada ítem de alloy_log_files necesita path' in ansible_failed_result.msg"
             fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
             quiet: true
+    - name: "Caso: regla de unit sin replacement"
+      block:
+        - name: Incluir las validaciones
+          ansible.builtin.include_role:
+            name: "{{ _role_path }}"
+            tasks_from: assert
+          vars:
+            alloy_labels_cliente: test
+            alloy_labels_entorno: ci
+            alloy_metrics_url: https://receiver.test/api/prom/push
+            alloy_logs_url: https://receiver.test/loki/api/v1/push
+            alloy_auth: "{{ _validos.alloy_auth }}"
+            alloy_logs_journal_unit_rewrites:
+              - {regex: 'foo-[0-9]+\.scope'}
+        - name: Fallar si la validación no frenó
+          ansible.builtin.fail:
+            msg: "La validación no frenó"
+      rescue:
+        - name: Verificar el mensaje
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is defined
+              - "'necesita regex y replacement' in ansible_failed_result.msg"
+            fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
+            quiet: true
     - name: "Caso: variables válidas no fallan"
       ansible.builtin.include_role:
         name: "{{ _role_path }}"

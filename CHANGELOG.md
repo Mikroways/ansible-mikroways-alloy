@@ -12,7 +12,7 @@ rompan inventarios existentes, salvo los asserts nuevos.
 
 - NTP: se vigila la unit que está corriendo; si ninguna corre, la primera
   instalada. Antes podía vigilar un chrony instalado y parado y dar una falsa
-  alerta.
+  alerta. Se suma `ntpsec.service` a las candidatas.
 - journald: el label `unit` se normaliza (`session-N.scope` → `session.scope`,
   `run-*`, `user@N.service`, scopes de contenedores, `sshd@…`,
   `systemd-coredump@…`). Reglas en `alloy_logs_journal_unit_rewrites`.
@@ -20,6 +20,9 @@ rompan inventarios existentes, salvo los asserts nuevos.
   existencia se comprueba con `systemctl show`, así `.timer`, `.mount` e
   instancias de templates ya no dan un aviso falso. El collector de systemd ya
   no descarta `.mount` ni `.scope` pedidos.
+- Las units se vigilan por su nombre canónico: pedir un alias
+  (`sshd.service`, que en Ubuntu es `ssh.service`) ya no deja la unit sin
+  métricas. La serie lleva el nombre canónico.
 - Los avisos son warnings de Ansible (action plugin `mikroways_alloy_aviso`) y
   quedan en las custom stats `alloy_avisos`, visibles al final de la corrida
   con `ANSIBLE_SHOW_CUSTOM_STATS=true`.
@@ -43,14 +46,17 @@ rompan inventarios existentes, salvo los asserts nuevos.
 - En la primera corrida, después del reinicio se mandaba además un reload por
   los secretos.
 - Un paquete removido sin purgar (estado `rc`) se tomaba como instalado y el rol
-  fallaba al habilitar el servicio.
+  fallaba al habilitar el servicio. `absent` lo purga igual.
+- `absent` solo borra el directorio de textfile si la marca es un archivo de
+  root que nombra `alloy_textfile_directory`. La marca de la 0.1.0 vivía en el
+  home de `alloy` y se seguía sin validar.
 
 ### Agregado
 
 - Assert: `alloy_extra_labels` no puede pisar `cliente`, `entorno`, `host` ni
   `os`.
 - Asserts de `alloy_log_files`: `path` obligatorio, `name` válido e ids sin
-  repetir.
+  repetir; y de `alloy_logs_journal_unit_rewrites`: `regex` y `replacement`.
 - `tests/rol.yml`: render de ids, avisos visibles y empaquetado.
 
 ## [0.1.0] - 2026-10-23

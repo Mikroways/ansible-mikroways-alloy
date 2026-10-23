@@ -25,18 +25,23 @@
     group: root
     mode: "0700"
 
-# 0.1.0 usaba /var/lib/alloy, el home del usuario alloy. La marca solo se
-# migra si es un archivo de root (no un symlink ni algo que dejó alloy), y
-# state: absent borra un symlink sin seguirlo.
+# 0.1.0 usaba /var/lib/alloy, el home del usuario alloy. La marca vieja solo
+# se migra si es válida (ver textfile-mark.yml): se escribe una nueva, no se
+# copia el archivo. state: absent borra un symlink sin seguirlo.
+- name: Leer la marca del directorio de textfile de la 0.1.0
+  ansible.builtin.include_tasks: textfile-mark.yml
+  vars:
+    _mark_paths: ["{{ _alloy_legacy_textfile_mark }}"]
+
 - name: Migrar la marca del directorio de textfile de la 0.1.0
-  ansible.builtin.shell:
-    cmd: >-
-      if [ -f {{ _alloy_legacy_textfile_mark }} ] && [ ! -L {{ _alloy_legacy_textfile_mark }} ]
-      && [ "$(stat -c %u {{ _alloy_legacy_textfile_mark }})" = 0 ]; then
-      [ -e {{ _alloy_textfile_mark }} ] || install -o root -g root -m 0644
-      {{ _alloy_legacy_textfile_mark }} {{ _alloy_textfile_mark }}; echo migrada; fi
-  register: _alloy_mark_migration
-  changed_when: "'migrada' in _alloy_mark_migration.stdout"
+  ansible.builtin.copy:
+    dest: "{{ _alloy_textfile_mark }}"
+    content: "{{ alloy_textfile_directory }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+    force: false
+  when: _alloy_textfile_mark_ok | bool
 
 - name: Borrar staging, backup y marca de la 0.1.0
   ansible.builtin.file:

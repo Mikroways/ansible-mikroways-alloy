@@ -57,12 +57,13 @@ provisioner:
         alloy_logs_auth:
           username: logs-user
           password: logs-pass
-        # Sin sufijo (se completa .service), un timer y un mount.
+        # Sin sufijo (se completa .service), un timer, un mount y un alias.
         alloy_systemd_units:
           - alloy-test-dummy
           - no-existe
           - alloy-test-dummy.timer
           - mnt-alloytest.mount
+          - alloy-test-alias.service
         alloy_processes:
           - {name: sleep, cmdline_regex: "sleep infinity"}
         alloy_log_files:

@@ -71,6 +71,18 @@
           Usá alloy_labels_cliente, alloy_labels_entorno o alloy_labels_host.
         quiet: true
 
+    - name: Validar alloy_logs_journal_unit_rewrites
+      ansible.builtin.assert:
+        that: _bad | length == 0
+        fail_msg: >-
+          Cada regla de alloy_logs_journal_unit_rewrites necesita regex y
+          replacement (faltan en {{ _bad | length }} regla(s))
+        quiet: true
+      vars:
+        _bad: >-
+          {{ alloy_logs_journal_unit_rewrites | rejectattr('regex', 'defined') | list
+             + alloy_logs_journal_unit_rewrites | rejectattr('replacement', 'defined') | list }}
+
     - name: Validar el path de alloy_log_files
       ansible.builtin.assert:
         that: alloy_log_files | rejectattr('path', 'defined') | list | length == 0

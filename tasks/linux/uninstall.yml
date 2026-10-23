@@ -1,18 +1,15 @@
 ---
 # Desinstalación limpia. La marca de textfile se lee antes de borrar
 # /etc/alloy, que es donde vive (en la 0.1.0 vivía en /var/lib/alloy).
+# La marca solo vale si es un archivo de root y nombra el directorio de
+# textfile configurado: la de la 0.1.0 vive en el home de alloy, que el
+# usuario alloy puede reescribir.
 - name: Leer la marca del directorio de textfile
-  ansible.builtin.slurp:
-    src: "{{ item }}"
-  register: _alloy_textfile_marks
-  failed_when: false
-  loop:
-    - "{{ _alloy_textfile_mark }}"
-    - "{{ _alloy_legacy_textfile_mark }}"
-
-- name: Elegir la marca del directorio de textfile
-  ansible.builtin.set_fact:
-    _alloy_textfile_mark_found: "{{ _alloy_textfile_marks.results | selectattr('content', 'defined') | first | default({}) }}"
+  ansible.builtin.include_tasks: textfile-mark.yml
+  vars:
+    _mark_paths:
+      - "{{ _alloy_textfile_mark }}"
+      - "{{ _alloy_legacy_textfile_mark }}"
 
 - name: Leer las units del host
   ansible.builtin.service_facts:
@@ -33,7 +30,7 @@
     selection: install
   when:
     - ansible_facts['os_family'] == 'Debian'
-    - _alloy_installed_version | length > 0
+    - _alloy_pkg_present | bool
 
 - name: Desinstalar el paquete (Debian)
   ansible.builtin.apt:
@@ -42,7 +39,7 @@
     purge: true
   when:
     - ansible_facts['os_family'] == 'Debian'
-    - _alloy_installed_version | length > 0
+    - _alloy_pkg_present | bool
 
 - name: Desinstalar el paquete (RedHat)
   ansible.builtin.command:
@@ -50,7 +47,7 @@
   changed_when: true
   when:
     - ansible_facts['os_family'] == 'RedHat'
-    - _alloy_installed_version | length > 0
+    - _alloy_pkg_present | bool
 
 - name: Borrar config, secretos, datos y caché
   ansible.builtin.file:
@@ -64,9 +61,9 @@
 
 - name: Borrar el directorio de textfile (solo si lo creó el rol)
   ansible.builtin.file:
-    path: "{{ _alloy_textfile_mark_found.content | b64decode | trim }}"
+    path: "{{ alloy_textfile_directory }}"
     state: absent
-  when: _alloy_textfile_mark_found.content is defined
+  when: _alloy_textfile_mark_ok | bool
 
 - name: Borrar el usuario alloy
   ansible.builtin.user:

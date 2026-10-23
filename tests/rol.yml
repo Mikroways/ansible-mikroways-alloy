@@ -97,6 +97,17 @@
           ntpd.service: {state: stopped}
           chrony.service: {state: inactive}
 
+    # Debian con ntpsec: ntp.service y ntpd.service pueden figurar como alias.
+    - name: "Caso NTP: ntpsec corriendo"
+      ansible.builtin.assert:
+        that: _alloy_ntp_unit_detected == 'ntpsec.service'
+        fail_msg: "Eligió {{ _alloy_ntp_unit_detected }}"
+        quiet: true
+      vars:
+        _alloy_services:
+          ntp.service: {state: inactive}
+          ntpsec.service: {state: running}
+
     - name: "Caso NTP: sin units de NTP"
       ansible.builtin.assert:
         that: _alloy_ntp_unit_detected == ''
@@ -112,6 +123,21 @@
         quiet: true
       vars:
         alloy_systemd_units: [nginx, backup.timer, mnt-data.mount, openvpn@cliente.service, app.v2]
+
+    - name: "Caso units: alias, faltantes y nombres inválidos"
+      ansible.builtin.assert:
+        that:
+          - _alloy_units_info | rejectattr('missing') | map(attribute='id') | list == ['a.service', 'ssh.service']
+          - _alloy_units_info | selectattr('missing') | map(attribute='name') | list == ['no.service', 'foo@.service']
+        fail_msg: "{{ _alloy_units_info | to_json }}"
+        quiet: true
+      vars:
+        _alloy_units_show:
+          results:
+            - {item: a.service, rc: 0, stdout: "Id=a.service\nLoadState=loaded"}
+            - {item: sshd.service, rc: 0, stdout: "LoadState=loaded\nId=ssh.service"}
+            - {item: no.service, rc: 0, stdout: "Id=no.service\nLoadState=not-found"}
+            - {item: foo@.service, rc: 1, stdout: ""}
 
 - name: Avisos visibles
   hosts: localhost
@@ -170,12 +196,30 @@
         fail_msg: Las colecciones de las pruebas van en molecule/requirements.yml, no en meta/requirements.yml
         quiet: true
 
+    - name: Buscar los escenarios de Molecule
+      ansible.builtin.find:
+        paths: "{{ _role_path }}/molecule"
+        patterns: molecule.yml
+        recurse: true
+      register: _escenarios
+
     - name: Verificar que los escenarios usan molecule/requirements.yml
       ansible.builtin.assert:
-        that: lookup('ansible.builtin.file', item) is search('requirements-file:\s*molecule/requirements.yml')
-        fail_msg: "{{ item }} no usa molecule/requirements.yml"
+        that:
+          - _escenarios.matched >= 8
+          - _sin_req | length == 0
+        fail_msg: "Escenarios sin molecule/requirements.yml: {{ _sin_req }} ({{ _escenarios.matched }} encontrados)"
         quiet: true
-      loop: "{{ query('ansible.builtin.fileglob', _role_path ~ '/molecule/*/molecule.yml') }}"
+      vars:
+        _sin_req: "{{ _escenarios.files | map(attribute='path') | reject('in', _con_req) | list }}"
+        _con_req: >-
+          {%- set out = [] -%}
+          {%- for f in _escenarios.files -%}
+            {%- if lookup('ansible.builtin.file', f.path) is search('requirements-file:\\s*molecule/requirements.yml') -%}
+              {%- set _ = out.append(f.path) -%}
+            {%- endif -%}
+          {%- endfor -%}
+          {{ out }}
 
     # El workflow de Galaxy recibe GALAXY_API_KEY: las actions de terceros van
     # por SHA, no por tag.

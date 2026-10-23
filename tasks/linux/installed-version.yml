@@ -13,8 +13,11 @@
   failed_when: false
   check_mode: false
 
+# _alloy_pkg_present: el paquete figura en la base (instalado o en rc), para
+# purgarlo en absent.
 - name: Calcular la versión instalada de Alloy
   ansible.builtin.set_fact:
+    _alloy_pkg_present: "{{ _alloy_version_query.rc == 0 and _alloy_version_query.stdout | trim | length > 0 }}"
     _alloy_installed_version: >-
       {{ (_alloy_version_query.stdout | trim | regex_replace('^installed ', '') | regex_replace('-.*$', ''))
          if _alloy_version_query.rc == 0 and _alloy_version_query.stdout is match('installed ') else '' }}

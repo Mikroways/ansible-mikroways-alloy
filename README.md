@@ -109,9 +109,9 @@ encendidos). El rol falla con un mensaje claro si falta alguna.
 | `alloy_metrics_allowlist_items` | ver `defaults/main.yml` | Nombres de métrica que se envían (regex por ítem). |
 | `alloy_textfile_directory` | `/var/lib/node_exporter` | Directorio del textfile collector. |
 | `alloy_textfile_allowlist` | `restic_.*\|kopia_.*\|backup_.*` | Métricas de textfile que se envían. |
-| `alloy_systemd_units` | `[]` | Units que tienen que estar activas, de cualquier tipo (`.service`, `.timer`, `.mount`…). Sin sufijo se toma `.service`. |
+| `alloy_systemd_units` | `[]` | Units que tienen que estar activas, de cualquier tipo (`.service`, `.timer`, `.mount`…). Sin sufijo se toma `.service`. Un alias se vigila por su nombre canónico (`sshd.service` → `ssh.service` en Ubuntu), que es el que lleva la serie. |
 | `alloy_systemd_restarts` | `false` | Enviar también `node_systemd_service_restart_total`. |
-| `alloy_ntp_autodetect` | `true` | Detectar y vigilar chrony, timesyncd o ntpd: la unit que corre o, si ninguna corre, la primera instalada. |
+| `alloy_ntp_autodetect` | `true` | Detectar y vigilar chrony, timesyncd, ntpsec o ntpd: la unit que corre o, si ninguna corre, la primera instalada. |
 | `alloy_processes` | `[]` | Procesos a vigilar: `[{name, cmdline_regex}]`. |
 | `alloy_teleport_enabled` | `auto` | `auto` (si existe `teleport.service`), `true` o `false`. |
 | `alloy_teleport_diag_addr` | `""` | `diag_addr` del agente de Teleport, para sus métricas. |
@@ -142,7 +142,9 @@ login, `systemd-run` o contenedor (`alloy_logs_journal_unit_rewrites`):
 | `sshd@…service`, `ssh@…service`, `systemd-coredump@…service` | `sshd@.service`… |
 
 Las demás instancias de templates (`openvpn@cliente.service`) quedan como
-están.
+están. Para sumar reglas, redefiní la lista completa: cada regla es
+`{regex, replacement}`, el regex se ancla entero y en `replacement` `$1` es el
+primer grupo (si después viene una letra o `_`, usá `${1}`).
 
 Cada archivo de log es un componente cuyo id sale del `name` del ítem o, si no
 tiene, del `path` (`/var/log/app/*.log` → `archivo_var_log_app_log`). Las
