@@ -33,21 +33,26 @@
         cmd: |
           echo "$(date -Is) ERROR alloy-file-err-{{ inventory_hostname }}" >> /var/log/alloy-test.log
           echo "$(date -Is) INFO alloy-file-info-{{ inventory_hostname }}" >> /var/log/alloy-test.log
+          echo "$(date -Is) ERROR alloy-file2-err-{{ inventory_hostname }}" >> /var/log/alloy-test2/app.log
+          echo "$(date -Is) INFO alloy-file2-info-{{ inventory_hostname }}" >> /var/log/alloy-test2/app.log
       changed_when: false
 
     - name: Verificar lo que llega al receptor
       ansible.builtin.include_tasks: ../resources/verify-tasks.yml
       vars:
         _sel: 'cliente="test",entorno="ci",os="linux",host="{{ inventory_hostname }}"'
+        _rotacion: "{{ lookup('ansible.builtin.file', lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') ~ '/rotacion-ts', errors='ignore') | default('0', true) }}"
         verify_prom_queries:
           - {query: 'alloy_build_info{ {{ _sel }},job="integrations/alloy",instance="{{ inventory_hostname }}"}', expect: present}
           - {query: 'prometheus_remote_storage_samples_total{ {{ _sel }} }', expect: present}
-          # Muestra reciente: después de rotar el password se sigue enviando.
-          - {query: '(time() - timestamp(alloy_build_info{ {{ _sel }} })) < 150', expect: present}
+          # Después de rotar el password se sigue enviando: hay muestras
+          # posteriores a la rotación (hora guardada por el side_effect).
+          - {query: 'timestamp(alloy_build_info{ {{ _sel }} }) > {{ _rotacion }}', expect: present}
           # Host y NTP.
           - {query: 'node_load1{ {{ _sel }},job="integrations/node_exporter",instance="{{ inventory_hostname }}"}', expect: present}
           - {query: 'node_timex_sync_status{ {{ _sel }} }', expect: present}
           - {query: 'node_filesystem_avail_bytes{ {{ _sel }} }', expect: present}
+          - {query: 'node_boot_time_seconds{ {{ _sel }} }', expect: present}
           # Fuera del set de collectors o de la allowlist.
           - {query: 'node_netstat_Tcp_InSegs{ {{ _sel }} }', expect: absent}
           - {query: 'node_cpu_guest_seconds_total{ {{ _sel }} }', expect: absent}
@@ -64,3 +69,6 @@
           - {query: '{ {{ _sel }},app="test"} |= "alloy-file-err-{{ inventory_hostname }}"', expect: present}
           - {query: '{ {{ _sel }} } |= "alloy-test-info-{{ inventory_hostname }}"', expect: absent}
           - {query: '{ {{ _sel }} } |= "alloy-file-info-{{ inventory_hostname }}"', expect: absent}
+          # Un ítem que pisa job no puede apagar el filtro de nivel.
+          - {query: '{ {{ _sel }},app="test2"} |= "alloy-file2-err-{{ inventory_hostname }}"', expect: present}
+          - {query: '{ {{ _sel }},app="test2"} |= "alloy-file2-info-{{ inventory_hostname }}"', expect: absent}

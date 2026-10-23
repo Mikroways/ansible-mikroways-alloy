@@ -79,7 +79,8 @@ alloy_unix_collectors:
   - os
   - time
   - timex
-  - boottime
+  # boottime es solo BSD/Darwin; en Linux node_boot_time_seconds sale de stat.
+  - stat
   - textfile
 alloy_netdev_device_exclude: "^(lo|veth.*|docker.*|br-.*|cali.*)$"
 

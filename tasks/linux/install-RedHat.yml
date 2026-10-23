@@ -8,4 +8,4 @@
   ansible.builtin.command:
     argv: [rpm, -U, --oldpackage, --replacepkgs, --nosignature, "{{ _alloy_cache_dir }}/{{ _alloy_pkg_name }}"]
   changed_when: true
-  notify: Restart alloy
+  register: _alloy_pkg_result

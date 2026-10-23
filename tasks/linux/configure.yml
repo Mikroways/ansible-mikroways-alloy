@@ -136,7 +136,7 @@
 - name: Aplicar la config nueva
   when:
     - not ansible_check_mode
-    - _alloy_conf_changed or _alloy_conf_extra | length > 0
+    - _alloy_conf_changed or _alloy_conf_extra | length > 0 or _alloy_restart_needed | default(false) | bool
   block:
     - name: Respaldar conf.d
       ansible.builtin.shell:
@@ -167,12 +167,16 @@
 
     - name: Aplicar la config en Alloy
       block:
+        # Con paquete, entorno o grupos nuevos hay que reiniciar: un reload
+        # lo atendería el proceso viejo (binario o CONFIG_FILE anteriores).
         - name: Recargar la config en caliente (/-/reload)
           ansible.builtin.uri:
             url: "http://{{ _alloy_listen_addr }}/-/reload"
             return_content: true
           register: _alloy_reload
-          when: _alloy_active.stdout == 'active'
+          when:
+            - _alloy_active.stdout == 'active'
+            - not _alloy_restart_needed | default(false) | bool
 
         - name: Arrancar Alloy con la config nueva
           ansible.builtin.systemd_service:
@@ -180,13 +184,22 @@
             state: restarted
             enabled: true
             daemon_reload: true
-          when: _alloy_active.stdout != 'active'
+          when: _alloy_active.stdout != 'active' or _alloy_restart_needed | default(false) | bool
 
         - name: Esperar a que Alloy cargue la config (/-/ready)
           ansible.builtin.uri:
             url: "http://{{ _alloy_listen_addr }}/-/ready"
           register: _alloy_ready
           until: _alloy_ready.status == 200
+          retries: 10
+          delay: 2
+
+        - name: Comprobar que el puerto lo atiende Alloy
+          ansible.builtin.uri:
+            url: "http://{{ _alloy_listen_addr }}/metrics"
+            return_content: true
+          register: _alloy_owner
+          until: "'alloy_build_info' in (_alloy_owner.content | default(''))"
           retries: 10
           delay: 2
       rescue:
@@ -245,3 +258,15 @@
     state: started
     enabled: true
   when: not (ansible_check_mode and _alloy_installed_version | length == 0)
+
+# Si otro proceso (por ejemplo Grafana Agent, que usa el mismo puerto por
+# defecto) atiende 12345, /-/ready contesta 200 aunque Alloy esté caído.
+- name: Verificar que Alloy atiende en {{ _alloy_listen_addr }}
+  ansible.builtin.uri:
+    url: "http://{{ _alloy_listen_addr }}/metrics"
+    return_content: true
+  register: _alloy_final_owner
+  until: "'alloy_build_info' in (_alloy_final_owner.content | default(''))"
+  retries: 10
+  delay: 2
+  when: not ansible_check_mode

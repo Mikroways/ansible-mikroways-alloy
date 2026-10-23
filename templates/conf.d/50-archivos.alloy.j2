@@ -19,7 +19,9 @@ loki.process "{{ id }}" {
   forward_to = [loki.write.default.receiver]
 
   stage.match {
-    selector = {{ ('{job="integrations/logfile"} !~ ' ~ (level | to_json)) | to_json }}
+    // filename lo pone siempre loki.source.file: el filtro no depende de
+    // labels que el ítem pueda pisar (por ejemplo job).
+    selector = {{ ('{filename=~".+"} !~ ' ~ (level | to_json)) | to_json }}
     action   = "drop"
   }
 }

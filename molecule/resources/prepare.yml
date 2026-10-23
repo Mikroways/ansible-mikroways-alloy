@@ -209,6 +209,19 @@
         mode: "0644"
         force: false
 
+    - name: Crear el directorio del segundo log de prueba
+      ansible.builtin.file:
+        path: /var/log/alloy-test2
+        state: directory
+        mode: "0755"
+
+    - name: Crear el segundo archivo de log de prueba
+      ansible.builtin.copy:
+        dest: /var/log/alloy-test2/app.log
+        content: ""
+        mode: "0644"
+        force: false
+
     - name: Crear un log que alloy no puede leer (para el warning)
       ansible.builtin.copy:
         dest: /var/log/alloy-test-privado.log

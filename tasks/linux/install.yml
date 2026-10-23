@@ -2,8 +2,21 @@
 - name: Leer la versión instalada de Alloy
   ansible.builtin.include_tasks: installed-version.yml
 
+# En --check no se baja ni se instala nada: se informa el cambio.
+- name: Informar la instalación pendiente (--check)
+  ansible.builtin.debug:
+    msg: >-
+      Se instalaría Alloy {{ alloy_version }}
+      ({{ 'instalada: ' ~ _alloy_installed_version if _alloy_installed_version | length > 0 else 'no está instalado' }}).
+  changed_when: true
+  when:
+    - ansible_check_mode
+    - _alloy_installed_version != alloy_version
+
 - name: Descargar e instalar el paquete
-  when: _alloy_installed_version != alloy_version
+  when:
+    - not ansible_check_mode
+    - _alloy_installed_version != alloy_version
   block:
     - name: Crear el directorio de caché
       ansible.builtin.file:
@@ -68,7 +81,9 @@
   ansible.builtin.dpkg_selections:
     name: alloy
     selection: hold
-  when: ansible_facts['os_family'] == 'Debian'
+  when:
+    - ansible_facts['os_family'] == 'Debian'
+    - not (ansible_check_mode and _alloy_installed_version | length == 0)
 
 - name: Avisar si hay un repo de Grafana que ofrezca alloy (RedHat)
   when: ansible_facts['os_family'] == 'RedHat'
@@ -95,7 +110,7 @@
     owner: root
     group: root
     mode: "0644"
-  notify: Restart alloy
+  register: _alloy_env_result
 
 - name: Sumar el usuario alloy a grupos extra
   ansible.builtin.user:
@@ -103,10 +118,21 @@
     groups: "{{ alloy_extra_groups }}"
     append: true
   when: alloy_extra_groups | length > 0
-  notify: Restart alloy
+  register: _alloy_groups_result
 
 - name: Habilitar el servicio
   ansible.builtin.systemd_service:
     name: alloy
     enabled: true
     daemon_reload: true
+  when: not (ansible_check_mode and _alloy_installed_version | length == 0)
+
+# El reinicio por paquete, entorno o grupos lo hace configure.yml dentro del
+# bloque de aplicación (con /-/ready y rollback), no un handler.
+- name: Calcular si hace falta reiniciar Alloy
+  ansible.builtin.set_fact:
+    _alloy_restart_needed: >-
+      {{ (not ansible_check_mode)
+         and ((_alloy_installed_version != alloy_version)
+              or (_alloy_env_result is changed)
+              or (_alloy_groups_result is changed)) }}

@@ -56,3 +56,19 @@ provisioner:
         alloy_tls_ca_pem: "{{ lookup('file', lookup('env', 'MOLECULE_PROJECT_DIRECTORY') ~ '/molecule/resources/receiver/.ca/ca.crt') }}"
 verifier:
   name: ansible
+scenario:
+  test_sequence:
+    - dependency
+    - cleanup
+    - destroy
+    - syntax
+    - create
+    - prepare
+    - converge
+    - idempotence
+    - side_effect
+    - check
+    - converge
+    - verify
+    - cleanup
+    - destroy

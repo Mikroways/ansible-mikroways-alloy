@@ -125,3 +125,13 @@
     - name: Aplicar el rol
       ansible.builtin.include_role:
         name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+
+- name: Guardar la hora de la rotación
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Escribir la hora de la rotación
+      ansible.builtin.copy:
+        dest: "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/rotacion-ts"
+        content: "{{ now(utc=true).timestamp() | int }}"
+        mode: "0644"

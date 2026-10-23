@@ -1,0 +1,22 @@
+---
+# Corrida multi-host con descarga en el controlador: el primer host ya tiene la
+# versión y el segundo no. El caché del controlador no existe.
+- name: Dejar el segundo host sin Alloy
+  hosts: alloy-rockylinux9
+  gather_facts: true
+  tasks:
+    - name: Desinstalar Alloy a mano
+      ansible.builtin.command: rpm -e alloy  # noqa: command-instead-of-module
+      changed_when: true
+
+- name: Borrar el caché del controlador
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Borrar ~/.cache/mikroways-alloy
+      ansible.builtin.file:
+        path: "{{ lookup('env', 'HOME') }}/.cache/mikroways-alloy"
+        state: absent
+
+- name: Volver a converger los dos hosts
+  ansible.builtin.import_playbook: converge.yml

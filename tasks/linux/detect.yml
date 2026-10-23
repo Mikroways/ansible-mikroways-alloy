@@ -28,3 +28,10 @@
   ansible.builtin.debug:
     msg: "[WARNING] La unit {{ item }} está en alloy_systemd_units pero no existe en {{ inventory_hostname }}."
   loop: "{{ alloy_systemd_units | reject('in', ansible_facts.services) | list }}"
+
+- name: Avisar si Grafana Agent está corriendo
+  ansible.builtin.debug:
+    msg: >-
+      [WARNING] grafana-agent.service está corriendo en {{ inventory_hostname }}.
+      Usa el mismo puerto por defecto (12345) que Alloy; el rol no lo toca.
+  when: ansible_facts.services['grafana-agent.service'].state | default('') == 'running'
