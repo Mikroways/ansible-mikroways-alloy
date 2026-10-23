@@ -1,0 +1,65 @@
+---
+name: Tests
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v5
+      - name: Instalar dependencias
+        run: uv sync
+      - name: yamllint
+        run: uv run yamllint .
+      - name: ansible-lint
+        run: uv run ansible-lint
+
+  asserts:
+    name: Validaciones de variables
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v5
+      - name: Instalar dependencias
+        run: uv sync
+      - name: Correr tests/asserts.yml
+        run: uv run ansible-playbook -i tests/inventory tests/asserts.yml
+
+  molecule:
+    name: Molecule (${{ matrix.scenario }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        scenario:
+          - default
+          - version
+          - auth-bearer
+          - auth-header
+          - auth-oauth2
+          - proxy
+          - teleport
+          - absent
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Instalar uv
+        uses: astral-sh/setup-uv@v5
+      - name: Instalar dependencias
+        run: uv sync
+      - name: Correr Molecule
+        run: uv run molecule test -s ${{ matrix.scenario }}
+        env:
+          PY_COLORS: "1"
+          ANSIBLE_FORCE_COLOR: "1"
