@@ -1,0 +1,90 @@
+---
+- name: Preparar receptor y hosts
+  ansible.builtin.import_playbook: ../resources/prepare.yml
+
+- name: Casos del escenario default
+  hosts: all
+  gather_facts: true
+  tasks:
+    # NTP: chrony instalado pero parado y otra unit de NTP corriendo. El rol
+    # tiene que vigilar la que corre (antes vigilaba chrony y daba una falsa
+    # alerta de NTP caído).
+    - name: Instalar chrony
+      ansible.builtin.shell:
+        cmd: >-
+          if command -v apt-get >/dev/null; then
+          apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq chrony;
+          else dnf -y -q install chrony; fi
+      changed_when: true
+
+    - name: Parar y deshabilitar chrony
+      ansible.builtin.shell:
+        cmd: >-
+          for u in chrony.service chronyd.service; do
+          systemctl disable --now "$u" 2>/dev/null || true; done
+      changed_when: true
+
+    - name: Crear una unit de NTP falsa que corre
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/ntpd.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=NTP falso para las pruebas del rol alloy
+          [Service]
+          ExecStart=/bin/sleep infinity
+          [Install]
+          WantedBy=multi-user.target
+
+    # Units que no son .service: service_facts no las lista y el rol avisaba
+    # que no existían.
+    - name: Crear un timer y un mount de prueba
+      ansible.builtin.copy:
+        dest: "/etc/systemd/system/{{ item.name }}"
+        mode: "0644"
+        content: "{{ item.content }}"
+      loop:
+        - name: alloy-test-dummy.timer
+          content: |
+            [Unit]
+            Description=Timer de prueba del rol alloy
+            [Timer]
+            OnCalendar=daily
+            Unit=alloy-test-dummy.service
+            [Install]
+            WantedBy=timers.target
+        - name: mnt-alloytest.mount
+          content: |
+            [Unit]
+            Description=Mount de prueba del rol alloy
+            [Mount]
+            What=tmpfs
+            Where=/mnt/alloytest
+            Type=tmpfs
+            [Install]
+            WantedBy=multi-user.target
+      loop_control:
+        label: "{{ item.name }}"
+
+    # Un alias (como sshd.service → ssh.service en Ubuntu): el collector solo
+    # reporta el nombre canónico.
+    - name: Crear una unit con alias
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/alloy-test-real.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Unit con alias de las pruebas del rol alloy
+          [Service]
+          ExecStart=/bin/sleep infinity
+          [Install]
+          WantedBy=multi-user.target
+          Alias=alloy-test-alias.service
+
+    - name: Arrancar las units de prueba
+      ansible.builtin.systemd_service:
+        name: "{{ item }}"
+        state: started
+        enabled: true
+        daemon_reload: true
+      loop: [ntpd.service, alloy-test-dummy.timer, mnt-alloytest.mount, alloy-test-real.service]

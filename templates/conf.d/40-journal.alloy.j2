@@ -1,5 +1,7 @@
 // {{ ansible_managed }}
 // Logs de journald, filtrados en el agente desde {{ alloy_logs_min_priority }} para arriba.
+// El label unit se normaliza (alloy_logs_journal_unit_rewrites) para no abrir
+// un stream por cada login, systemd-run o contenedor.
 loki.relabel "journal" {
   forward_to = []
 
@@ -14,6 +16,15 @@ loki.relabel "journal" {
     source_labels = ["__journal__systemd_unit"]
     target_label  = "unit"
   }
+{% for r in alloy_logs_journal_unit_rewrites %}
+
+  rule {
+    source_labels = ["unit"]
+    regex         = {{ r.regex | to_json }}
+    target_label  = "unit"
+    replacement   = {{ r.replacement | to_json }}
+  }
+{% endfor %}
 
   rule {
     source_labels = ["__journal_priority_keyword"]

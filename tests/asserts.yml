@@ -422,6 +422,161 @@
               - "'alloy_state debe ser present o absent' in ansible_failed_result.msg"
             fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
             quiet: true
+    - name: "Caso: alloy_extra_labels pisa cliente"
+      block:
+        - name: Incluir las validaciones
+          ansible.builtin.include_role:
+            name: "{{ _role_path }}"
+            tasks_from: assert
+          vars:
+            _caso: {"alloy_extra_labels": {"cliente": "otro"}}
+            alloy_labels_cliente: "{{ _caso.alloy_labels_cliente | default(_validos.alloy_labels_cliente) }}"
+            alloy_labels_entorno: "{{ _caso.alloy_labels_entorno | default(_validos.alloy_labels_entorno) }}"
+            alloy_metrics_url: "{{ _caso.alloy_metrics_url | default(_validos.alloy_metrics_url) }}"
+            alloy_logs_url: "{{ _caso.alloy_logs_url | default(_validos.alloy_logs_url) }}"
+            alloy_auth: "{{ _caso.alloy_auth | default(_validos.alloy_auth) }}"
+            alloy_extra_labels: "{{ _caso.alloy_extra_labels | default({}) }}"
+            alloy_log_files: "{{ _caso.alloy_log_files | default([]) }}"
+        - name: Fallar si la validación no frenó
+          ansible.builtin.fail:
+            msg: "La validación no frenó"
+      rescue:
+        - name: Verificar el mensaje
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is defined
+              - "'alloy_extra_labels no puede pisar las labels comunes' in ansible_failed_result.msg"
+            fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
+            quiet: true
+    - name: "Caso: alloy_extra_labels pisa os"
+      block:
+        - name: Incluir las validaciones
+          ansible.builtin.include_role:
+            name: "{{ _role_path }}"
+            tasks_from: assert
+          vars:
+            _caso: {"alloy_extra_labels": {"equipo": "x", "os": "windows"}}
+            alloy_labels_cliente: "{{ _caso.alloy_labels_cliente | default(_validos.alloy_labels_cliente) }}"
+            alloy_labels_entorno: "{{ _caso.alloy_labels_entorno | default(_validos.alloy_labels_entorno) }}"
+            alloy_metrics_url: "{{ _caso.alloy_metrics_url | default(_validos.alloy_metrics_url) }}"
+            alloy_logs_url: "{{ _caso.alloy_logs_url | default(_validos.alloy_logs_url) }}"
+            alloy_auth: "{{ _caso.alloy_auth | default(_validos.alloy_auth) }}"
+            alloy_extra_labels: "{{ _caso.alloy_extra_labels | default({}) }}"
+            alloy_log_files: "{{ _caso.alloy_log_files | default([]) }}"
+        - name: Fallar si la validación no frenó
+          ansible.builtin.fail:
+            msg: "La validación no frenó"
+      rescue:
+        - name: Verificar el mensaje
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is defined
+              - "'alloy_extra_labels no puede pisar las labels comunes' in ansible_failed_result.msg"
+            fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
+            quiet: true
+    - name: "Caso: alloy_log_files con ids repetidos"
+      block:
+        - name: Incluir las validaciones
+          ansible.builtin.include_role:
+            name: "{{ _role_path }}"
+            tasks_from: assert
+          vars:
+            _caso: {"alloy_log_files": [{"path": "/var/log/a-b.log"}, {"path": "/var/log/a_b.log"}]}
+            alloy_labels_cliente: "{{ _caso.alloy_labels_cliente | default(_validos.alloy_labels_cliente) }}"
+            alloy_labels_entorno: "{{ _caso.alloy_labels_entorno | default(_validos.alloy_labels_entorno) }}"
+            alloy_metrics_url: "{{ _caso.alloy_metrics_url | default(_validos.alloy_metrics_url) }}"
+            alloy_logs_url: "{{ _caso.alloy_logs_url | default(_validos.alloy_logs_url) }}"
+            alloy_auth: "{{ _caso.alloy_auth | default(_validos.alloy_auth) }}"
+            alloy_extra_labels: "{{ _caso.alloy_extra_labels | default({}) }}"
+            alloy_log_files: "{{ _caso.alloy_log_files | default([]) }}"
+        - name: Fallar si la validación no frenó
+          ansible.builtin.fail:
+            msg: "La validación no frenó"
+      rescue:
+        - name: Verificar el mensaje
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is defined
+              - "'alloy_log_files tiene ids repetidos' in ansible_failed_result.msg"
+            fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
+            quiet: true
+    - name: "Caso: alloy_log_files con name inválido"
+      block:
+        - name: Incluir las validaciones
+          ansible.builtin.include_role:
+            name: "{{ _role_path }}"
+            tasks_from: assert
+          vars:
+            _caso: {"alloy_log_files": [{"path": "/var/log/app.log", "name": "Mi App"}]}
+            alloy_labels_cliente: "{{ _caso.alloy_labels_cliente | default(_validos.alloy_labels_cliente) }}"
+            alloy_labels_entorno: "{{ _caso.alloy_labels_entorno | default(_validos.alloy_labels_entorno) }}"
+            alloy_metrics_url: "{{ _caso.alloy_metrics_url | default(_validos.alloy_metrics_url) }}"
+            alloy_logs_url: "{{ _caso.alloy_logs_url | default(_validos.alloy_logs_url) }}"
+            alloy_auth: "{{ _caso.alloy_auth | default(_validos.alloy_auth) }}"
+            alloy_extra_labels: "{{ _caso.alloy_extra_labels | default({}) }}"
+            alloy_log_files: "{{ _caso.alloy_log_files | default([]) }}"
+        - name: Fallar si la validación no frenó
+          ansible.builtin.fail:
+            msg: "La validación no frenó"
+      rescue:
+        - name: Verificar el mensaje
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is defined
+              - "'name de alloy_log_files' in ansible_failed_result.msg"
+            fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
+            quiet: true
+    - name: "Caso: alloy_log_files sin path"
+      block:
+        - name: Incluir las validaciones
+          ansible.builtin.include_role:
+            name: "{{ _role_path }}"
+            tasks_from: assert
+          vars:
+            _caso: {"alloy_log_files": [{"name": "app"}]}
+            alloy_labels_cliente: "{{ _caso.alloy_labels_cliente | default(_validos.alloy_labels_cliente) }}"
+            alloy_labels_entorno: "{{ _caso.alloy_labels_entorno | default(_validos.alloy_labels_entorno) }}"
+            alloy_metrics_url: "{{ _caso.alloy_metrics_url | default(_validos.alloy_metrics_url) }}"
+            alloy_logs_url: "{{ _caso.alloy_logs_url | default(_validos.alloy_logs_url) }}"
+            alloy_auth: "{{ _caso.alloy_auth | default(_validos.alloy_auth) }}"
+            alloy_extra_labels: "{{ _caso.alloy_extra_labels | default({}) }}"
+            alloy_log_files: "{{ _caso.alloy_log_files | default([]) }}"
+        - name: Fallar si la validación no frenó
+          ansible.builtin.fail:
+            msg: "La validación no frenó"
+      rescue:
+        - name: Verificar el mensaje
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is defined
+              - "'Cada ítem de alloy_log_files necesita path' in ansible_failed_result.msg"
+            fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
+            quiet: true
+    - name: "Caso: regla de unit sin replacement"
+      block:
+        - name: Incluir las validaciones
+          ansible.builtin.include_role:
+            name: "{{ _role_path }}"
+            tasks_from: assert
+          vars:
+            alloy_labels_cliente: test
+            alloy_labels_entorno: ci
+            alloy_metrics_url: https://receiver.test/api/prom/push
+            alloy_logs_url: https://receiver.test/loki/api/v1/push
+            alloy_auth: "{{ _validos.alloy_auth }}"
+            alloy_logs_journal_unit_rewrites:
+              - {regex: 'foo-[0-9]+\.scope'}
+        - name: Fallar si la validación no frenó
+          ansible.builtin.fail:
+            msg: "La validación no frenó"
+      rescue:
+        - name: Verificar el mensaje
+          ansible.builtin.assert:
+            that:
+              - ansible_failed_result.msg is defined
+              - "'necesita regex y replacement' in ansible_failed_result.msg"
+            fail_msg: "Mensaje inesperado: {{ ansible_failed_result.msg | default('') }}"
+            quiet: true
     - name: "Caso: variables válidas no fallan"
       ansible.builtin.include_role:
         name: "{{ _role_path }}"
@@ -432,6 +587,10 @@
         alloy_metrics_url: https://receiver.test/api/prom/push
         alloy_logs_url: https://receiver.test/loki/api/v1/push
         alloy_auth: "{{ _validos.alloy_auth }}"
+        alloy_extra_labels: {equipo: infra}
+        alloy_log_files:
+          - {path: /var/log/a-b.log}
+          - {path: /var/log/a_b.log, name: a_b_bis}
 
     - name: "Caso: absent no exige labels ni URLs"
       ansible.builtin.include_role:

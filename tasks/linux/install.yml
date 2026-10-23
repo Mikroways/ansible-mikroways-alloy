@@ -96,9 +96,9 @@
       register: _alloy_grafana_repo
 
     - name: Avisar del repo de Grafana
-      ansible.builtin.debug:
+      mikroways_alloy_aviso:
         msg: >-
-          [WARNING] Hay un repo de Grafana configurado
+          Hay un repo de Grafana configurado
           ({{ _alloy_grafana_repo.files | map(attribute='path') | join(', ') }}).
           Un 'dnf upgrade' puede cambiar la versión de Alloy fijada por el rol.
       when: _alloy_grafana_repo.matched > 0

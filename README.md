@@ -45,7 +45,7 @@ labels `cliente`, `host`, `entorno` y `os`.
 # requirements.yml
 roles:
   - name: mikroways.alloy
-    version: 0.1.0
+    version: 0.2.0
 ```
 
 ```bash
@@ -61,7 +61,8 @@ ansible-galaxy install -r requirements.yml
   `dnf upgrade` no cambia la versión. En Debian/Ubuntu, además, el paquete queda
   en `hold`. El paquete descargado se borra después de instalar.
 - **Config:** un archivo `.alloy` por señal en `/etc/alloy/conf.d/`. El rol
-  primero los genera en `/var/lib/alloy/staging/` y valida el conjunto con
+  primero los genera en `/etc/alloy/.staging/` (de root, fuera del home del
+  usuario `alloy`) y valida el conjunto con
   `alloy validate`. Si valida, respalda `conf.d/`, sincroniza y aplica la config
   con `/-/reload` (o arranca el servicio). **Si Alloy no carga la config
   nueva, el rol restaura la anterior y falla:** una config inválida nunca deja al
@@ -69,6 +70,15 @@ ansible-galaxy install -r requirements.yml
 - **Secretos:** van en `/etc/alloy/secrets/` (`root:alloy`, `0640`) y la config
   los lee por ruta. Nunca están en el archivo de config ni en la salida de
   Ansible (`no_log`).
+- **Avisos:** lo que el rol no corrige pero conviene mirar (una unit pedida que
+  no existe, un log que `alloy` no puede leer, un repo de Grafana configurado,
+  Grafana Agent corriendo, TLS sin verificar) sale como `[WARNING]` de Ansible,
+  con el host. Para verlos juntos al final de una corrida en lote, después del
+  `PLAY RECAP`, activá las custom stats:
+  `ANSIBLE_SHOW_CUSTOM_STATS=true ansible-playbook …` (o
+  `show_custom_stats = true` en `ansible.cfg`). Quedan bajo `alloy_avisos`, por
+  host. Con `display_ok_hosts = false` el `[WARNING]` en línea no se ve, pero
+  las custom stats sí.
 
 ## Variables
 
@@ -91,7 +101,7 @@ encendidos). El rol falla con un mensaje claro si falta alguna.
 | `alloy_tls_insecure_skip_verify` | `false` | No verificar el certificado (solo pruebas; el rol avisa). |
 | `alloy_labels_cliente` / `alloy_labels_entorno` | `""` | Labels obligatorias. |
 | `alloy_labels_host` | `inventory_hostname` | Label `host` (y `instance`). |
-| `alloy_extra_labels` | `{}` | Labels extra en todas las series y streams. |
+| `alloy_extra_labels` | `{}` | Labels extra en todas las series y streams. No pueden ser `cliente`, `entorno`, `host` ni `os`. |
 | `alloy_scrape_interval` | `60s` | Intervalo de scrape (cuida las DPM del free tier). |
 | `alloy_host_metrics_enabled` | `true` | Métricas de host. |
 | `alloy_unix_collectors` | lista corta | Collectors del node exporter (incluye `timex`). |
@@ -99,16 +109,17 @@ encendidos). El rol falla con un mensaje claro si falta alguna.
 | `alloy_metrics_allowlist_items` | ver `defaults/main.yml` | Nombres de métrica que se envían (regex por ítem). |
 | `alloy_textfile_directory` | `/var/lib/node_exporter` | Directorio del textfile collector. |
 | `alloy_textfile_allowlist` | `restic_.*\|kopia_.*\|backup_.*` | Métricas de textfile que se envían. |
-| `alloy_systemd_units` | `[]` | Units que tienen que estar activas. |
+| `alloy_systemd_units` | `[]` | Units que tienen que estar activas, de cualquier tipo (`.service`, `.timer`, `.mount`…). Sin sufijo se toma `.service`. Un alias se vigila por su nombre canónico (`sshd.service` → `ssh.service` en Ubuntu), que es el que lleva la serie. |
 | `alloy_systemd_restarts` | `false` | Enviar también `node_systemd_service_restart_total`. |
-| `alloy_ntp_autodetect` | `true` | Detectar y vigilar chrony, timesyncd o ntpd. |
+| `alloy_ntp_autodetect` | `true` | Detectar y vigilar chrony, timesyncd, ntpsec o ntpd: la unit que corre o, si ninguna corre, la primera instalada. |
 | `alloy_processes` | `[]` | Procesos a vigilar: `[{name, cmdline_regex}]`. |
 | `alloy_teleport_enabled` | `auto` | `auto` (si existe `teleport.service`), `true` o `false`. |
 | `alloy_teleport_diag_addr` | `""` | `diag_addr` del agente de Teleport, para sus métricas. |
 | `alloy_logs_journal_enabled` | `true` | Logs de journald. |
 | `alloy_logs_min_priority` | `warning` | Prioridad mínima: `emerg` … `debug`. |
 | `alloy_logs_journal_max_age` | `12h` | Historial máximo en la primera corrida. |
-| `alloy_log_files` | `[]` | Archivos: `[{path, labels, level_regex}]`. |
+| `alloy_logs_journal_unit_rewrites` | ver `defaults/main.yml` | Reglas `{regex, replacement}` que normalizan el label `unit` de journald. |
+| `alloy_log_files` | `[]` | Archivos: `[{path, name, labels, level_regex}]`. `name` (opcional, `[a-z0-9_]+`) fija el id del componente. |
 | `alloy_log_files_default_level_regex` | warn/error/crit… | Líneas que se envían si el ítem no define `level_regex`. |
 | `alloy_self_monitoring_enabled` | `true` | Métricas del propio Alloy. |
 | `alloy_extra_config_files` | `[]` | Archivos `.alloy` propios: `[{name, content}]`. |
@@ -117,7 +128,29 @@ encendidos). El rol falla con un mensaje claro si falta alguna.
 
 Labels de los logs: journald lleva `unit` y `level` (los keywords de Alloy:
 `error`, `warning`, `crit`…); los archivos llevan `filename` y los `labels` del
-ítem. El `job` es fijo por señal: `integrations/node_exporter`,
+ítem.
+
+El label `unit` de journald se normaliza para que no abra un stream por cada
+login, `systemd-run` o contenedor (`alloy_logs_journal_unit_rewrites`):
+
+| Unit original | `unit` |
+|---|---|
+| `session-123.scope` | `session.scope` |
+| `run-r3f2a….scope`, `run-u12.service` | `run.scope`, `run.service` |
+| `user@1000.service`, `user-runtime-dir@1000.service` | `user@.service`, `user-runtime-dir@.service` |
+| `docker-<id>.scope` (y `libpod-`, `cri-containerd-`, `crio-`) | `docker.scope`… |
+| `sshd@…service`, `ssh@…service`, `systemd-coredump@…service` | `sshd@.service`… |
+
+Las demás instancias de templates (`openvpn@cliente.service`) quedan como
+están. Para sumar reglas, redefiní la lista completa: cada regla es
+`{regex, replacement}`, el regex se ancla entero y en `replacement` `$1` es el
+primer grupo (si después viene una letra o `_`, usá `${1}`).
+
+Cada archivo de log es un componente cuyo id sale del `name` del ítem o, si no
+tiene, del `path` (`/var/log/app/*.log` → `archivo_var_log_app_log`). Las
+posiciones de lectura van por id: reordenar `alloy_log_files` no las pierde,
+pero cambiar el `path` de un ítem sin `name` sí (vuelve a leer desde el
+final). Dos ítems no pueden dar el mismo id. El `job` es fijo por señal: `integrations/node_exporter`,
 `integrations/process_exporter`, `integrations/teleport`, `integrations/alloy`,
 `integrations/journal` e `integrations/logfile`.
 
@@ -221,8 +254,8 @@ alloy_state: absent
 alloy_remove_user: true
 ```
 
-Borra el paquete, `/etc/alloy`, el archivo de entorno, `/var/lib/alloy` y el
-directorio de textfile solo si lo creó el rol.
+Borra el paquete, `/etc/alloy` (con staging y backup), el archivo de entorno,
+`/var/lib/alloy` y el directorio de textfile solo si lo creó el rol.
 
 ## Antes de aplicar en un cliente
 
@@ -234,7 +267,8 @@ ansible-playbook playbook.yml -l <host> --check --diff
 ```
 
 En `--check` el rol muestra los cambios de la config (en staging) sin tocar el
-servicio, y no muestra secretos. Recién con la confirmación se corre sin
+servicio, informa `conf.d cambiaría: True` si la config nueva difiere de la que
+corre, y no muestra secretos. Recién con la confirmación se corre sin
 `--check`.
 
 ## Desarrollo
@@ -243,6 +277,7 @@ servicio, y no muestra secretos. Recién con la confirmación se corre sin
 uv sync
 uv run yamllint . && uv run ansible-lint
 uv run ansible-playbook -i tests/inventory tests/asserts.yml   # validaciones
+uv run ansible-playbook -i tests/inventory tests/rol.yml       # render, avisos y empaquetado
 uv run molecule test -s default                               # o cualquier escenario
 ```
 
@@ -251,8 +286,8 @@ Prometheus, Loki, nginx con auth/TLS y tinyproxy):
 
 | Escenario | Qué prueba |
 |---|---|
-| `default` | Todas las señales con basic auth y CA propia, config rota rechazada, rotación de password. Debian 12, Ubuntu 22.04/24.04, Rocky 8/9. |
-| `version` | Downgrade manual: el rol vuelve a la versión fijada y deja el `hold`. |
+| `default` | Todas las señales con basic auth y CA propia, NTP con una unit parada y otra corriendo, units sin sufijo, `.timer` y `.mount`, `unit` de journald normalizado, `--check` con un cambio de config, una sola carga en la primera corrida, migración desde 0.1.0, config rota rechazada, rotación de password. Debian 12, Ubuntu 22.04/24.04, Rocky 8/9. |
+| `version` | Downgrade manual y paquete removido sin purgar (`rc`): el rol vuelve a la versión fijada y deja el `hold`. |
 | `auth-bearer`, `auth-header`, `auth-oauth2` | Cada modo de autenticación. |
 | `proxy` | Host sin salida directa: todo por tinyproxy y paquete bajado en el controlador. |
 | `teleport` | Detección del agente y scrape de su `diag_addr`. |

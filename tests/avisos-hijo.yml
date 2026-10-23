@@ -1,0 +1,27 @@
+---
+# Playbook hijo de tests/rol.yml: emite dos avisos con la action plugin del rol.
+- name: Avisos del rol
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Vaciar los avisos
+      mikroways_alloy_aviso:
+        reset: true
+
+    - name: Emitir un aviso
+      mikroways_alloy_aviso:
+        msg: aviso de prueba uno
+
+    - name: Emitir una lista de avisos
+      mikroways_alloy_aviso:
+        msg: "{{ ['dos', 'tres'] | map('regex_replace', '^', 'aviso de prueba ') | list }}"
+
+    - name: Una lista vacía no emite nada
+      mikroways_alloy_aviso:
+        msg: []
+
+    - name: Verificar que los avisos quedan en el fact
+      ansible.builtin.assert:
+        that: ansible_facts.alloy_avisos == ['aviso de prueba uno', 'aviso de prueba dos', 'aviso de prueba tres']
+        fail_msg: "_alloy_avisos inesperado: {{ ansible_facts.alloy_avisos | default('(no definido)') }}"
+        quiet: true

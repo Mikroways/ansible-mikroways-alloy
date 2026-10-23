@@ -11,3 +11,7 @@ skip_list:
 kinds:
   - tasks: "**/molecule/resources/verify-tasks.yml"
   - tasks: "**/tasks/**/*.yml"
+# Action plugin del rol que usa tests/avisos-hijo.yml (fuera del rol,
+# ansible-lint no la encuentra).
+mock_modules:
+  - mikroways_alloy_aviso
