@@ -1,0 +1,190 @@
+---
+# Pruebas del rol que no necesitan un host: render de templates, avisos y
+# empaquetado.
+# Uso: uv run ansible-playbook -i tests/inventory tests/rol.yml
+- name: Ids estables de los archivos de log
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../defaults/main.yml
+    - ../vars/main.yml
+  vars:
+    _role_path: "{{ playbook_dir | dirname }}"
+    _files:
+      - {path: /var/log/app/*.log}
+      - {path: /var/log/otra/app.log, labels: {app: otra}}
+      - {path: /srv/x.log, name: mi_app}
+  tasks:
+    # El template importa macros.j2, que está un nivel arriba: se copian juntos.
+    - name: Crear un directorio temporal para el render
+      ansible.builtin.tempfile:
+        state: directory
+      register: _tmp
+      changed_when: false
+
+    - name: Copiar el template y las macros
+      ansible.builtin.copy:
+        src: "{{ _role_path }}/templates/{{ item }}"
+        dest: "{{ _tmp.path }}/{{ item | basename }}"
+        mode: "0644"
+      loop: [conf.d/50-archivos.alloy.j2, macros.j2]
+      changed_when: false
+
+    - name: Renderizar 50-archivos con la lista en dos órdenes
+      ansible.builtin.set_fact:
+        _render: >-
+          {{ _render | default([])
+             + [lookup('ansible.builtin.template', _tmp.path ~ '/50-archivos.alloy.j2',
+                       template_vars={'alloy_log_files': item})] }}
+      loop:
+        - "{{ _files }}"
+        - "{{ _files | reverse | list }}"
+      loop_control:
+        label: "{{ item | map(attribute='path') | join(', ') }}"
+
+    # path → id de componente, sacado de local.file_match.
+    - name: Calcular el id de cada path en cada render
+      ansible.builtin.set_fact:
+        _ids: "{{ _ids | default([]) + [dict(item | regex_findall(_re) | map('reverse') | map('list'))] }}"
+      loop: "{{ _render }}"
+      loop_control:
+        label: render
+      vars:
+        _re: 'local\.file_match "([a-z0-9_]+)" \{\s*path_targets = \[\{ "__path__" = "([^"]+)"'
+
+    - name: Verificar que el id no depende del orden
+      ansible.builtin.assert:
+        that:
+          - _ids[0] | length == 3
+          - _ids[0] == _ids[1]
+          - _ids[0]['/var/log/app/*.log'] == 'archivo_var_log_app_log'
+          - _ids[0]['/srv/x.log'] == 'archivo_mi_app'
+        fail_msg: "Ids inesperados: {{ _ids }}"
+        quiet: true
+
+    - name: Borrar el directorio temporal
+      ansible.builtin.file:
+        path: "{{ _tmp.path }}"
+        state: absent
+      changed_when: false
+
+- name: Detección de NTP y normalización de units
+  hosts: localhost
+  gather_facts: false
+  vars_files:
+    - ../defaults/main.yml
+    - ../vars/main.yml
+  tasks:
+    # chrony instalado y parado, ntpd corriendo: se vigila ntpd.
+    - name: "Caso NTP: se elige la unit que corre"
+      ansible.builtin.assert:
+        that: _alloy_ntp_unit_detected == 'ntpd.service'
+        fail_msg: "Eligió {{ _alloy_ntp_unit_detected }}"
+        quiet: true
+      vars:
+        _alloy_services:
+          chrony.service: {state: stopped}
+          chronyd.service: {state: stopped}
+          ntpd.service: {state: running}
+
+    - name: "Caso NTP: si ninguna corre, la primera instalada"
+      ansible.builtin.assert:
+        that: _alloy_ntp_unit_detected == 'chrony.service'
+        fail_msg: "Eligió {{ _alloy_ntp_unit_detected }}"
+        quiet: true
+      vars:
+        _alloy_services:
+          ntpd.service: {state: stopped}
+          chrony.service: {state: inactive}
+
+    - name: "Caso NTP: sin units de NTP"
+      ansible.builtin.assert:
+        that: _alloy_ntp_unit_detected == ''
+        quiet: true
+      vars:
+        _alloy_services:
+          sshd.service: {state: running}
+
+    - name: "Caso units: se completa .service si falta el sufijo"
+      ansible.builtin.assert:
+        that: _alloy_systemd_units_norm == ['nginx.service', 'backup.timer', 'mnt-data.mount', 'openvpn@cliente.service', 'app.v2.service']
+        fail_msg: "Normalizó {{ _alloy_systemd_units_norm }}"
+        quiet: true
+      vars:
+        alloy_systemd_units: [nginx, backup.timer, mnt-data.mount, openvpn@cliente.service, app.v2]
+
+- name: Avisos visibles
+  hosts: localhost
+  gather_facts: false
+  vars:
+    _role_path: "{{ playbook_dir | dirname }}"
+  tasks:
+    - name: Correr el playbook hijo
+      ansible.builtin.command:
+        argv: [ansible-playbook, -i, "{{ playbook_dir }}/inventory", "{{ playbook_dir }}/avisos-hijo.yml"]
+      environment:
+        ANSIBLE_ACTION_PLUGINS: "{{ _role_path }}/action_plugins"
+        ANSIBLE_SHOW_CUSTOM_STATS: "true"
+        ANSIBLE_DISPLAY_OK_HOSTS: "{{ item }}"
+        ANSIBLE_NOCOLOR: "true"
+        ANSIBLE_FORCE_COLOR: "false"
+      register: _hijo
+      changed_when: false
+      loop: ["true", "false"]
+
+    - name: Verificar el warning en línea y las custom stats
+      ansible.builtin.assert:
+        that:
+          # El warning en línea solo se ve si se muestran las tareas ok.
+          - >-
+            item.item == 'false'
+            or '[WARNING]: mikroways.alloy en localhost: aviso de prueba uno' in item.stderr
+          # Las custom stats se ven siempre, después del recap.
+          - >-
+            item.stdout is search('PLAY RECAP[\\s\\S]*CUSTOM STATS[\\s\\S]*localhost[\\s\\S]*alloy_avisos'
+            ~ '[\\s\\S]*aviso de prueba uno[\\s\\S]*aviso de prueba dos[\\s\\S]*aviso de prueba tres')
+          - item.stdout is search('localhost\\s+[:] ok=\\d+\\s+changed=0')
+        fail_msg: "Salida inesperada (display_ok_hosts={{ item.item }}):\n{{ item.stdout }}"
+        quiet: true
+      loop: "{{ _hijo.results }}"
+      loop_control:
+        label: "display_ok_hosts={{ item.item }}"
+
+- name: Empaquetado
+  hosts: localhost
+  gather_facts: false
+  vars:
+    _role_path: "{{ playbook_dir | dirname }}"
+  tasks:
+    # Galaxy procesa meta/requirements.yml para quienes consumen el rol.
+    - name: Buscar meta/requirements.yml
+      ansible.builtin.stat:
+        path: "{{ _role_path }}/meta/requirements.yml"
+      register: _meta_req
+
+    - name: Verificar que las colecciones de los tests no van en meta/
+      ansible.builtin.assert:
+        that:
+          - not _meta_req.stat.exists
+          - lookup('ansible.builtin.file', _role_path ~ '/molecule/requirements.yml') is search('community.docker')
+        fail_msg: Las colecciones de las pruebas van en molecule/requirements.yml, no en meta/requirements.yml
+        quiet: true
+
+    - name: Verificar que los escenarios usan molecule/requirements.yml
+      ansible.builtin.assert:
+        that: lookup('ansible.builtin.file', item) is search('requirements-file:\s*molecule/requirements.yml')
+        fail_msg: "{{ item }} no usa molecule/requirements.yml"
+        quiet: true
+      loop: "{{ query('ansible.builtin.fileglob', _role_path ~ '/molecule/*/molecule.yml') }}"
+
+    # El workflow de Galaxy recibe GALAXY_API_KEY: las actions de terceros van
+    # por SHA, no por tag.
+    - name: Verificar que las actions de terceros están fijadas por SHA
+      ansible.builtin.assert:
+        that: _sin_sha | length == 0
+        fail_msg: "Actions sin SHA en {{ item | basename }}: {{ _sin_sha | join(', ') }}"
+        quiet: true
+      vars:
+        _uses: "{{ lookup('ansible.builtin.file', item) | regex_findall('uses:\\s*(\\S+)') }}"
+        _sin_sha: "{{ _uses | reject('match', '^actions/') | reject('match', '^[^@]+@[0-9a-f]{40}$') | list }}"
+      loop: ["{{ _role_path }}/.github/workflows/galaxy.yml"]

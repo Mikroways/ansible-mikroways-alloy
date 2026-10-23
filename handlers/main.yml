@@ -1,5 +1,8 @@
 ---
+# Si en la corrida se reinició Alloy (paquete, entorno o grupos nuevos), el
+# proceso nuevo ya leyó los secretos y el reload sobra.
 - name: Reload alloy
   ansible.builtin.systemd_service:
     name: alloy
     state: reloaded
+  when: not (_alloy_restarted | default(false) | bool)

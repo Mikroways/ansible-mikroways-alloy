@@ -2,7 +2,7 @@
 dependency:
   name: galaxy
   options:
-    requirements-file: meta/requirements.yml
+    requirements-file: molecule/requirements.yml
 driver:
   name: docker
 platforms:
@@ -37,7 +37,7 @@ platforms:
 provisioner:
   name: ansible
   playbooks:
-    prepare: ../resources/prepare.yml
+    prepare: prepare.yml
     cleanup: ../resources/cleanup.yml
   inventory:
     host_vars:
@@ -57,15 +57,19 @@ provisioner:
         alloy_logs_auth:
           username: logs-user
           password: logs-pass
+        # Sin sufijo (se completa .service), un timer y un mount.
         alloy_systemd_units:
-          - alloy-test-dummy.service
-          - no-existe.service
+          - alloy-test-dummy
+          - no-existe
+          - alloy-test-dummy.timer
+          - mnt-alloytest.mount
         alloy_processes:
           - {name: sleep, cmdline_regex: "sleep infinity"}
         alloy_log_files:
           - path: /var/log/alloy-test*.log
             labels: {app: test}
           - path: /var/log/alloy-test2/*.log
+            name: test2
             labels: {app: test2, job: miapp}
         alloy_tls_ca_pem: "{{ lookup('file', lookup('env', 'MOLECULE_PROJECT_DIRECTORY') ~ '/molecule/resources/receiver/.ca/ca.crt') }}"
 verifier:

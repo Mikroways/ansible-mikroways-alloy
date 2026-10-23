@@ -1,4 +1,9 @@
 ---
+# Los avisos se ven como warnings y en las custom stats (ver README).
+- name: Vaciar los avisos de la corrida anterior
+  mikroways_alloy_aviso:
+    reset: true
+
 - name: Validar variables
   ansible.builtin.import_tasks: assert.yml
 

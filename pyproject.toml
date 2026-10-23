@@ -1,6 +1,6 @@
 [project]
 name = "ansible-mikroways-alloy"
-version = "0.1.0"
+version = "0.2.0"
 description = "Rol de Ansible que instala y configura Grafana Alloy"
 requires-python = ">=3.12"
 dependencies = [

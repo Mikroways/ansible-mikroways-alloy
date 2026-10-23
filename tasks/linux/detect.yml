@@ -5,9 +5,7 @@
 
 - name: Detectar NTP y Teleport
   ansible.builtin.set_fact:
-    _alloy_ntp_unit: >-
-      {{ (['chrony.service', 'chronyd.service', 'systemd-timesyncd.service', 'ntpd.service', 'ntp.service']
-          | select('in', ansible_facts.services) | list + [''])[0] }}
+    _alloy_ntp_unit: "{{ _alloy_ntp_unit_detected }}"
     _alloy_teleport_on: >-
       {{ (alloy_teleport_enabled | string | lower == 'true')
          or (alloy_teleport_enabled | string | lower == 'auto' and 'teleport.service' in ansible_facts.services) }}
@@ -15,7 +13,7 @@
 - name: Calcular las units vigiladas
   ansible.builtin.set_fact:
     _alloy_units: >-
-      {{ (alloy_systemd_units
+      {{ (_alloy_systemd_units_norm
           + ([_alloy_ntp_unit] if alloy_ntp_autodetect | bool and _alloy_ntp_unit | length > 0 else [])
           + (['teleport.service'] if _alloy_teleport_on | bool else []))
          | unique | list }}
@@ -24,14 +22,45 @@
   ansible.builtin.set_fact:
     _alloy_units_regex: "^({{ _alloy_units | map('regex_escape') | join('|') }})$"
 
+# service_facts solo lista services y no ve instancias de templates que no
+# estén cargadas: systemctl show sirve para cualquier tipo de unit.
+- name: Leer qué units pedidas existen
+  ansible.builtin.command:
+    argv: "{{ ['systemctl', 'show', '--property=Id,LoadState', '--'] + _alloy_systemd_units_norm }}"
+  register: _alloy_units_show
+  changed_when: false
+  check_mode: false
+  when: _alloy_systemd_units_norm | length > 0
+
 - name: Avisar de units pedidas que no existen en el host
-  ansible.builtin.debug:
-    msg: "[WARNING] La unit {{ item }} está en alloy_systemd_units pero no existe en {{ inventory_hostname }}."
-  loop: "{{ alloy_systemd_units | reject('in', ansible_facts.services) | list }}"
+  mikroways_alloy_aviso:
+    msg: >-
+      {%- set out = [] -%}
+      {%- for u in alloy_systemd_units -%}
+        {%- set n = _alloy_systemd_units_norm[loop.index0] -%}
+        {%- if n in _missing -%}
+          {%- set _ = out.append('La unit ' ~ n ~ ' está en alloy_systemd_units pero no existe en el host'
+              ~ ((' (se pidió "' ~ u ~ '", sin sufijo, y se tomó como ' ~ n ~ ')') if n != u else '') ~ '.') -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+  vars:
+    # Bloques "Id=...\nLoadState=..." separados por una línea vacía, en el
+    # orden en que se pidieron.
+    _show: "{{ (_alloy_units_show.stdout | default('')).split('\n\n') | map('trim') | select | list }}"
+    _missing: >-
+      {%- set out = [] -%}
+      {%- for b in _show -%}
+        {%- if 'LoadState=not-found' in b -%}
+          {%- set _ = out.append(_alloy_systemd_units_norm[loop.index0]) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+  when: _alloy_systemd_units_norm | length > 0
 
 - name: Avisar si Grafana Agent está corriendo
-  ansible.builtin.debug:
+  mikroways_alloy_aviso:
     msg: >-
-      [WARNING] grafana-agent.service está corriendo en {{ inventory_hostname }}.
-      Usa el mismo puerto por defecto (12345) que Alloy; el rol no lo toca.
+      grafana-agent.service está corriendo. Usa el mismo puerto por defecto
+      (12345) que Alloy; el rol no lo toca.
   when: ansible_facts.services['grafana-agent.service'].state | default('') == 'running'

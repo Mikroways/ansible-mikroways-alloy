@@ -60,6 +60,50 @@
           Valores: {{ _alloy_priority_map.keys() | join(', ') }}
         quiet: true
 
+    # Las labels comunes las usan el ruteo de alertas y el metamonitoreo.
+    - name: Validar alloy_extra_labels
+      ansible.builtin.assert:
+        that: alloy_extra_labels.keys() | intersect(_alloy_reserved_labels) | length == 0
+        fail_msg: >-
+          alloy_extra_labels no puede pisar las labels comunes
+          ({{ _alloy_reserved_labels | join(', ') }}):
+          {{ alloy_extra_labels.keys() | intersect(_alloy_reserved_labels) | join(', ') }}.
+          Usá alloy_labels_cliente, alloy_labels_entorno o alloy_labels_host.
+        quiet: true
+
+    - name: Validar el path de alloy_log_files
+      ansible.builtin.assert:
+        that: alloy_log_files | rejectattr('path', 'defined') | list | length == 0
+        fail_msg: "Cada ítem de alloy_log_files necesita path"
+        quiet: true
+
+    - name: Validar el name de alloy_log_files
+      ansible.builtin.assert:
+        that: _bad | length == 0
+        fail_msg: >-
+          El name de alloy_log_files solo puede tener minúsculas, números y _
+          (vale: {{ _bad | join(', ') }})
+        quiet: true
+      vars:
+        _bad: "{{ alloy_log_files | selectattr('name', 'defined') | map(attribute='name') | reject('match', '^[a-z0-9_]+$') | list }}"
+
+    # El id es el nombre del componente y la clave de las posiciones de
+    # lectura: dos ítems no pueden compartirlo.
+    - name: Validar que los ids de alloy_log_files no se repitan
+      ansible.builtin.assert:
+        that: _alloy_log_file_ids | unique | length == _alloy_log_file_ids | length
+        fail_msg: >-
+          alloy_log_files tiene ids repetidos
+          ({{ _dup | join(', ') }}). Poné un name distinto a cada ítem.
+        quiet: true
+      vars:
+        _dup: >-
+          {%- set seen = [] -%}{%- set dup = [] -%}
+          {%- for i in _alloy_log_file_ids -%}
+            {%- set _ = (dup if i in seen else seen).append(i) -%}
+          {%- endfor -%}
+          {{ dup | unique | list }}
+
     - name: Validar la auth de cada endpoint
       ansible.builtin.include_tasks: assert-auth.yml
       loop:

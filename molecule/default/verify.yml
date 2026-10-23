@@ -28,6 +28,59 @@
       loop: [err, info]
       changed_when: false
 
+    # Como un login (session-N.scope) y un systemd-run (run-*.scope).
+    # systemd-cat queda vivo mientras dura el sleep: journald le lee la unit.
+    - name: Escribir logs desde scopes transitorios
+      ansible.builtin.command:
+        argv: "{{ ['systemd-run', '--quiet', '--scope'] + item.args
+                  + ['sh', '-c', '{ echo ' ~ item.msg ~ '-' ~ inventory_hostname ~ '; sleep 2; } | systemd-cat -p err -t alloytest'] }}"
+      loop:
+        - {args: ["--unit=session-4242.scope"], msg: alloy-session}
+        - {args: [], msg: alloy-run}
+      loop_control:
+        label: "{{ item.msg }}"
+      changed_when: false
+
+    - name: Leer el estado de staging y del backup
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - /etc/alloy/.staging
+        - /etc/alloy/.conf.d.prev
+        - /var/lib/alloy/staging
+        - /var/lib/alloy/conf.d.prev
+      register: _dirs
+
+    # Fuera del home del usuario alloy, donde root hacía cp y rm.
+    - name: Verificar staging y backup en /etc/alloy, de root
+      ansible.builtin.assert:
+        that:
+          - _dirs.results[0].stat.isdir | default(false)
+          - _dirs.results[0].stat.pw_name == 'root'
+          - _dirs.results[0].stat.mode == '0700'
+          - _dirs.results[1].stat.isdir | default(false)
+          - _dirs.results[1].stat.pw_name == 'root'
+          - not _dirs.results[2].stat.exists
+          - not _dirs.results[3].stat.exists
+        fail_msg: "{{ _dirs.results | map(attribute='stat') | list | to_json }}"
+
+    - name: Volver a detectar las units vigiladas
+      ansible.builtin.include_role:
+        name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+        tasks_from: linux/detect
+
+    # El aviso de la unit que falta explica el sufijo; el timer y el mount no
+    # dan aviso.
+    - name: Verificar los avisos de units
+      ansible.builtin.assert:
+        that:
+          - _avisos | select('search', 'no-existe.service') | select('search', 'sin sufijo') | list | length > 0
+          - _avisos | select('search', 'alloy-test-dummy') | list | length == 0
+          - _avisos | select('search', 'mnt-alloytest') | list | length == 0
+        fail_msg: "Avisos: {{ _avisos }}"
+      vars:
+        _avisos: "{{ ansible_facts.alloy_avisos | default([]) }}"
+
     - name: Escribir logs de prueba en archivo
       ansible.builtin.shell:
         cmd: |
@@ -59,7 +112,12 @@
           - {query: 'node_network_receive_bytes_total{ {{ _sel }},device="lo"}', expect: absent}
           # Servicios, NTP, procesos y textfile.
           - {query: 'node_systemd_unit_state{ {{ _sel }},name="alloy-test-dummy.service",state="active"} == 1', expect: present}
-          - {query: 'node_systemd_unit_state{ {{ _sel }},name=~"chronyd?.service|systemd-timesyncd.service",state="active"}', expect: present}
+          # NTP: se vigila la unit que corre, no chrony (instalado y parado).
+          - {query: 'node_systemd_unit_state{ {{ _sel }},name="ntpd.service",state="active"} == 1', expect: present}
+          - {query: 'node_systemd_unit_state{ {{ _sel }},name=~"chronyd?.service"}', expect: absent}
+          # Units sin sufijo, timers y mounts.
+          - {query: 'node_systemd_unit_state{ {{ _sel }},name="alloy-test-dummy.timer",state="active"} == 1', expect: present}
+          - {query: 'node_systemd_unit_state{ {{ _sel }},name="mnt-alloytest.mount",state="active"} == 1', expect: present}
           - {query: 'namedprocess_namegroup_num_procs{ {{ _sel }},groupname="sleep",job="integrations/process_exporter"} >= 1', expect: present}
           - {query: 'backup_test_last_success_timestamp_seconds{ {{ _sel }} }', expect: present}
           - {query: 'node_systemd_unit_state{ {{ _sel }},state="inactive"}', expect: absent}
@@ -72,3 +130,7 @@
           # Un ítem que pisa job no puede apagar el filtro de nivel.
           - {query: '{ {{ _sel }},app="test2"} |= "alloy-file2-err-{{ inventory_hostname }}"', expect: present}
           - {query: '{ {{ _sel }},app="test2"} |= "alloy-file2-info-{{ inventory_hostname }}"', expect: absent}
+          # El label unit de journald no crece con cada login o systemd-run.
+          - {query: '{ {{ _sel }},unit="session.scope"} |= "alloy-session-{{ inventory_hostname }}"', expect: present}
+          - {query: '{ {{ _sel }},unit="run.scope"} |= "alloy-run-{{ inventory_hostname }}"', expect: present}
+          - {query: '{ {{ _sel }},unit=~"session-[0-9]+[.]scope|run-.+"}', expect: absent}

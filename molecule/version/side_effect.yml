@@ -164,6 +164,48 @@
 - name: Converger normal al final
   ansible.builtin.import_playbook: converge.yml
 
+# Paquete removido sin purgar (estado rc): dpkg-query sigue informando la
+# versión, pero Alloy no está instalado. El rol lo tiene que reinstalar.
+- name: Paquete en estado rc (Debian)
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Quitar el hold
+      ansible.builtin.dpkg_selections:
+        name: alloy
+        selection: install
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Remover el paquete sin purgar
+      ansible.builtin.command: dpkg -r alloy
+      changed_when: true
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Leer el estado del paquete
+      ansible.builtin.command: dpkg-query -W -f='${db:Status-Abbrev}' alloy
+      register: _rc
+      changed_when: false
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Verificar que quedó en rc
+      ansible.builtin.assert:
+        that: _rc.stdout | trim == 'rc'
+        fail_msg: "Estado inesperado: {{ _rc.stdout }}"
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Aplicar el rol
+      ansible.builtin.include_role:
+        name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+
+    - name: Leer la versión instalada
+      ansible.builtin.command: alloy --version
+      register: _rc_version
+      changed_when: false
+
+    - name: Verificar que Alloy quedó instalado
+      ansible.builtin.assert:
+        that: "'v1.21.1' in _rc_version.stdout"
+
 # Queda 1.21.0 instalada: el paso check de la secuencia corre --check con un
 # cambio de versión pendiente (no puede fallar) y el converge siguiente vuelve
 # a la versión fijada.

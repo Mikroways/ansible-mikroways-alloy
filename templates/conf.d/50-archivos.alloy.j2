@@ -1,8 +1,10 @@
 // {{ ansible_managed }}
 // Archivos de log: solo las líneas que matchean el regex de nivel.
+// El id sale del name o del path: reordenar alloy_log_files no pierde las
+// posiciones de lectura.
 {% import 'macros.j2' as m with context %}
 {% for f in alloy_log_files %}
-{%   set id = 'archivo_' ~ loop.index %}
+{%   set id = _alloy_log_file_ids[loop.index0] %}
 {%   set level = f.level_regex | default(alloy_log_files_default_level_regex) %}
 
 local.file_match "{{ id }}" {

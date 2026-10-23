@@ -1,11 +1,18 @@
 ---
 # Desinstalación limpia. La marca de textfile se lee antes de borrar
-# /var/lib/alloy, que es donde vive.
+# /etc/alloy, que es donde vive (en la 0.1.0 vivía en /var/lib/alloy).
 - name: Leer la marca del directorio de textfile
   ansible.builtin.slurp:
-    src: /var/lib/alloy/.textfile-created
-  register: _alloy_textfile_mark
+    src: "{{ item }}"
+  register: _alloy_textfile_marks
   failed_when: false
+  loop:
+    - "{{ _alloy_textfile_mark }}"
+    - "{{ _alloy_legacy_textfile_mark }}"
+
+- name: Elegir la marca del directorio de textfile
+  ansible.builtin.set_fact:
+    _alloy_textfile_mark_found: "{{ _alloy_textfile_marks.results | selectattr('content', 'defined') | first | default({}) }}"
 
 - name: Leer las units del host
   ansible.builtin.service_facts:
@@ -57,9 +64,9 @@
 
 - name: Borrar el directorio de textfile (solo si lo creó el rol)
   ansible.builtin.file:
-    path: "{{ _alloy_textfile_mark.content | b64decode | trim }}"
+    path: "{{ _alloy_textfile_mark_found.content | b64decode | trim }}"
     state: absent
-  when: _alloy_textfile_mark.content is defined
+  when: _alloy_textfile_mark_found.content is defined
 
 - name: Borrar el usuario alloy
   ansible.builtin.user:

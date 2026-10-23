@@ -2,10 +2,12 @@
 # Lee la versión instalada con rpm/dpkg-query en vez de package_facts: en EL8
 # los bindings de rpm/dnf solo existen para el Python 3.6 de la plataforma, que
 # ansible-core 2.19+ no maneja.
+# dpkg-query informa la versión también de un paquete removido sin purgar
+# (estado rc): solo cuenta como instalado si el estado es "installed".
 - name: Consultar la versión instalada de Alloy
   ansible.builtin.command:
-    argv: "{{ ['dpkg-query', '-W', '-f=${Version}', 'alloy'] if ansible_facts['os_family'] == 'Debian'
-              else ['rpm', '-q', '--qf', '%{VERSION}', 'alloy'] }}"
+    argv: "{{ ['dpkg-query', '-W', '-f=${db:Status-Status} ${Version}', 'alloy'] if ansible_facts['os_family'] == 'Debian'
+              else ['rpm', '-q', '--qf', 'installed %{VERSION}', 'alloy'] }}"
   register: _alloy_version_query
   changed_when: false
   failed_when: false
@@ -14,5 +16,5 @@
 - name: Calcular la versión instalada de Alloy
   ansible.builtin.set_fact:
     _alloy_installed_version: >-
-      {{ (_alloy_version_query.stdout | trim | regex_replace('-.*$', ''))
-         if _alloy_version_query.rc == 0 else '' }}
+      {{ (_alloy_version_query.stdout | trim | regex_replace('^installed ', '') | regex_replace('-.*$', ''))
+         if _alloy_version_query.rc == 0 and _alloy_version_query.stdout is match('installed ') else '' }}
