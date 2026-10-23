@@ -1,0 +1,45 @@
+---
+- name: Preparar receptor y hosts
+  ansible.builtin.import_playbook: ../resources/prepare.yml
+
+# Un teleport.service falso que expone métricas como el diag_addr del agente.
+- name: Agente de Teleport falso
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Escribir el servidor de métricas falso
+      ansible.builtin.copy:
+        dest: /opt/fake-teleport.py
+        mode: "0755"
+        content: |
+          from http.server import BaseHTTPRequestHandler, HTTPServer
+          BODY = b'process_state 0\nteleport_build_info{version="17.0.0"} 1\nteleport_otra 1\n'
+          class H(BaseHTTPRequestHandler):
+              def do_GET(self):
+                  self.send_response(200 if self.path == "/metrics" else 404)
+                  self.send_header("Content-Type", "text/plain; version=0.0.4")
+                  self.end_headers()
+                  if self.path == "/metrics":
+                      self.wfile.write(BODY)
+              def log_message(self, *a):
+                  pass
+          HTTPServer(("127.0.0.1", 3000), H).serve_forever()
+
+    - name: Crear teleport.service
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/teleport.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Teleport falso para las pruebas del rol alloy
+          [Service]
+          ExecStart=/usr/bin/python3 /opt/fake-teleport.py
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Arrancar teleport.service
+      ansible.builtin.systemd_service:
+        name: teleport.service
+        state: started
+        enabled: true
+        daemon_reload: true

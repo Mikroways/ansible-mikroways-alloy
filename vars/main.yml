@@ -68,6 +68,7 @@ _alloy_conf_files: >-
   {{ ['00-envio']
      + (['10-host'] if alloy_host_metrics_enabled | bool else [])
      + (['20-servicios'] if alloy_processes | length > 0 else [])
+     + (['30-teleport'] if (_alloy_teleport_on | default(false) | bool) and alloy_teleport_diag_addr | length > 0 else [])
      + (['40-journal'] if alloy_logs_journal_enabled | bool else [])
      + (['50-archivos'] if alloy_log_files | length > 0 else [])
      + (['90-self'] if alloy_self_monitoring_enabled | bool else []) }}
