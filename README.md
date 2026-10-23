@@ -31,6 +31,10 @@ labels `cliente`, `host`, `entorno` y `os`.
   Rocky, AlmaLinux y Oracle Linux 8, 9 y 10; Amazon Linux 2023 (sin CI).
 - **Ubuntu 20.04** trae Python 3.8, que ansible-core 2.20 o superior no maneja.
   Para esos hosts, el playbook tiene que usar ansible-core 2.19.
+- **EL8** (RHEL/Rocky/Alma/Oracle 8) trae Python 3.6, que ninguna versión
+  soportada de ansible-core maneja. Hay que instalar `python3.11` (está en
+  AppStream: `dnf install python3.11`) y definir
+  `ansible_python_interpreter: /usr/bin/python3.11` para esos hosts.
 - Salida HTTPS desde el host hasta el endpoint (directa o por proxy) y hasta
   GitHub para bajar el paquete (o ver `alloy_download_on_controller` y
   `alloy_download_base_url`).

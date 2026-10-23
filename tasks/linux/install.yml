@@ -1,13 +1,6 @@
 ---
-- name: Leer los paquetes instalados
-  ansible.builtin.package_facts:
-    manager: auto
-
-- name: Calcular la versión instalada de Alloy
-  ansible.builtin.set_fact:
-    _alloy_installed_version: >-
-      {{ (ansible_facts.packages['alloy'][0].version | regex_replace('-.*$', ''))
-         if 'alloy' in ansible_facts.packages else '' }}
+- name: Leer la versión instalada de Alloy
+  ansible.builtin.include_tasks: installed-version.yml
 
 - name: Descargar e instalar el paquete
   when: _alloy_installed_version != alloy_version

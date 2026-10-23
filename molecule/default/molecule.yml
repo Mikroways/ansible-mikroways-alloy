@@ -40,6 +40,9 @@ provisioner:
     prepare: ../resources/prepare.yml
     cleanup: ../resources/cleanup.yml
   inventory:
+    host_vars:
+      alloy-rockylinux8:
+        ansible_python_interpreter: /usr/bin/python3.11
     group_vars:
       all:
         alloy_labels_cliente: test

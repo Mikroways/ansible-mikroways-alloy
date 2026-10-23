@@ -130,6 +130,18 @@
         - http://127.0.0.1:19090/-/ready
         - http://127.0.0.1:13100/ready
 
+# EL8 trae Python 3.6 y ansible-core 2.19+ necesita 3.8+: se instala
+# python3.11 (AppStream) antes de juntar facts. Ver README.
+- name: Python para EL8
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Instalar python3.11 si el host solo tiene platform-python 3.6
+      ansible.builtin.raw: >-
+        if [ -x /usr/libexec/platform-python3.6 ] && ! command -v python3.11 >/dev/null; then
+        dnf -y -q install python3.11; fi
+      changed_when: false
+
 # Lo que las pruebas esperan encontrar en cada host.
 - name: Preparar los hosts de prueba
   hosts: all
@@ -138,11 +150,14 @@
     - name: Leer las units del host
       ansible.builtin.service_facts:
 
+    # Por comando: en EL8 el módulo dnf no anda con ansible-core 2.19+.
     - name: Instalar chrony si el host no tiene servicio de hora
-      ansible.builtin.package:
-        name: chrony
-        state: present
-        update_cache: true
+      ansible.builtin.shell:
+        cmd: >-
+          if command -v apt-get >/dev/null; then
+          apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq chrony;
+          else dnf -y -q install chrony; fi
+      changed_when: true
       when:
         - not (alloy_test_offline | default(false))
         - "'chrony.service' not in ansible_facts.services"

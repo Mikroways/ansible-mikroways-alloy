@@ -17,9 +17,8 @@
     enabled: false
   when: "'alloy.service' in ansible_facts.services"
 
-- name: Leer los paquetes instalados
-  ansible.builtin.package_facts:
-    manager: auto
+- name: Leer la versión instalada de Alloy
+  ansible.builtin.include_tasks: installed-version.yml
 
 - name: Quitar el hold del paquete (Debian)
   ansible.builtin.dpkg_selections:
@@ -27,7 +26,7 @@
     selection: install
   when:
     - ansible_facts['os_family'] == 'Debian'
-    - "'alloy' in ansible_facts.packages"
+    - _alloy_installed_version | length > 0
 
 - name: Desinstalar el paquete (Debian)
   ansible.builtin.apt:
@@ -36,15 +35,15 @@
     purge: true
   when:
     - ansible_facts['os_family'] == 'Debian'
-    - "'alloy' in ansible_facts.packages"
+    - _alloy_installed_version | length > 0
 
 - name: Desinstalar el paquete (RedHat)
-  ansible.builtin.dnf:
-    name: alloy
-    state: absent
+  ansible.builtin.command:
+    argv: [rpm, -e, alloy]
+  changed_when: true
   when:
     - ansible_facts['os_family'] == 'RedHat'
-    - "'alloy' in ansible_facts.packages"
+    - _alloy_installed_version | length > 0
 
 - name: Borrar config, secretos, datos y caché
   ansible.builtin.file:
