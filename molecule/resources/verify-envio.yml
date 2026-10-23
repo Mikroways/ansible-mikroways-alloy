@@ -1,0 +1,18 @@
+---
+# Verify común a los escenarios de auth y proxy: llegan métricas y logs.
+- name: Verify
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Escribir un log de prueba en journald
+      ansible.builtin.command: "logger -p user.err alloy-envio-{{ inventory_hostname }}"
+      changed_when: false
+
+    - name: Verificar lo que llega al receptor
+      ansible.builtin.include_tasks: verify-tasks.yml
+      vars:
+        _sel: 'cliente="test",entorno="ci",os="linux",host="{{ inventory_hostname }}"'
+        verify_prom_queries:
+          - {query: 'alloy_build_info{ {{ _sel }} }', expect: present}
+        verify_loki_queries:
+          - {query: '{ {{ _sel }},job="integrations/journal"} |= "alloy-envio-{{ inventory_hostname }}"', expect: present}

@@ -1,0 +1,59 @@
+---
+# Escenario proxy: envío con proxy (host sin salida directa).
+dependency:
+  name: galaxy
+  options:
+    requirements-file: meta/requirements.yml
+driver:
+  name: docker
+platforms:
+  - &plataforma
+    name: alloy-ubuntu2404
+    image: docker.io/geerlingguy/docker-ubuntu2404-ansible:latest
+    pre_build_image: true
+    privileged: true
+    cgroupns_mode: host
+    command: ""
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    tmpfs:
+      - /run
+      - /tmp
+      - /var/cache/alloy
+    networks:
+      - name: alloy-internal
+    docker_networks:
+      - name: alloy-internal
+        internal: true
+  - <<: *plataforma
+    name: alloy-rockylinux9
+    image: docker.io/geerlingguy/docker-rockylinux9-ansible:latest
+provisioner:
+  name: ansible
+  playbooks:
+    prepare: ../resources/prepare.yml
+    cleanup: ../resources/cleanup.yml
+    verify: verify.yml
+  inventory:
+    group_vars:
+      all:
+        alloy_metrics_url: https://receiver.test/basic/api/prom/push
+        alloy_logs_url: https://receiver.test/basic/loki/api/v1/push
+        alloy_labels_cliente: test
+        alloy_labels_entorno: ci
+        alloy_tls_ca_pem: "{{ lookup('file', lookup('env', 'MOLECULE_PROJECT_DIRECTORY') ~ '/molecule/resources/receiver/.ca/ca.crt') }}"
+        alloy_auth:
+          type: basic
+          password: metrics-pass
+        alloy_metrics_auth:
+          username: metrics-user
+        alloy_logs_auth:
+          username: logs-user
+          password: logs-pass
+        # El host solo llega al receptor por el proxy y no tiene salida a
+        # GitHub: el paquete se baja en el controlador.
+        alloy_proxy_url: http://alloy-test-proxy:8888
+        alloy_download_on_controller: true
+        alloy_test_offline: true
+verifier:
+  name: ansible

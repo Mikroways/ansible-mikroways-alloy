@@ -144,6 +144,7 @@
         state: present
         update_cache: true
       when:
+        - not (alloy_test_offline | default(false))
         - "'chrony.service' not in ansible_facts.services"
         - "'chronyd.service' not in ansible_facts.services"
         - "'systemd-timesyncd.service' not in ansible_facts.services"
