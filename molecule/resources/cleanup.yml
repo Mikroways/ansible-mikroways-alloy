@@ -1,0 +1,16 @@
+---
+- name: Bajar el receptor falso
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Borrar contenedores del receptor
+      community.docker.docker_container:
+        name: "{{ item }}"
+        state: absent
+        force_kill: true
+        keep_volumes: false
+      loop:
+        - alloy-test-receiver
+        - alloy-test-proxy
+        - alloy-test-prometheus
+        - alloy-test-loki

@@ -1,0 +1,70 @@
+---
+- name: Validar alloy_state
+  ansible.builtin.assert:
+    that: alloy_state in ['present', 'absent']
+    fail_msg: "alloy_state debe ser present o absent (vale '{{ alloy_state }}')"
+    quiet: true
+
+- name: Validar el sistema operativo
+  ansible.builtin.assert:
+    that:
+      - _alloy_distribution in _alloy_supported_os
+      - (_alloy_distribution_major | string) in _alloy_supported_os[_alloy_distribution]
+    fail_msg: >-
+      SO no soportado: {{ _alloy_distribution }} {{ _alloy_distribution_major }}.
+      Soportados: {{ _alloy_supported_os | dict2items
+      | map(attribute='key') | join(', ') }} (ver README).
+    quiet: true
+
+- name: Validar las variables de instalación y envío
+  when: alloy_state == 'present'
+  block:
+    - name: Validar alloy_version
+      ansible.builtin.assert:
+        that: alloy_version is match('^[0-9]+\.[0-9]+\.[0-9]+$')
+        fail_msg: "alloy_version debe ser una versión fija como 1.21.1 (vale '{{ alloy_version }}')"
+        quiet: true
+
+    # Una tarea por label (no un loop) para que el mensaje del fallo sea el
+    # del assert y no "One or more items failed".
+    - name: Validar alloy_labels_cliente
+      ansible.builtin.assert:
+        that: alloy_labels_cliente | string | trim | length > 0
+        fail_msg: alloy_labels_cliente es obligatoria
+        quiet: true
+
+    - name: Validar alloy_labels_entorno
+      ansible.builtin.assert:
+        that: alloy_labels_entorno | string | trim | length > 0
+        fail_msg: alloy_labels_entorno es obligatoria
+        quiet: true
+
+    - name: Validar alloy_metrics_url
+      ansible.builtin.assert:
+        that: alloy_metrics_url | trim | length > 0
+        fail_msg: alloy_metrics_url es obligatoria
+        quiet: true
+
+    - name: Validar alloy_logs_url
+      ansible.builtin.assert:
+        that: alloy_logs_url | trim | length > 0
+        fail_msg: alloy_logs_url es obligatoria cuando hay logs encendidos
+        quiet: true
+      when: _alloy_logs_on | bool
+
+    - name: Validar alloy_logs_min_priority
+      ansible.builtin.assert:
+        that: alloy_logs_min_priority in _alloy_priority_map
+        fail_msg: >-
+          alloy_logs_min_priority inválida: '{{ alloy_logs_min_priority }}'.
+          Valores: {{ _alloy_priority_map.keys() | join(', ') }}
+        quiet: true
+
+    - name: Validar la auth de cada endpoint
+      ansible.builtin.include_tasks: assert-auth.yml
+      loop:
+        - {endpoint: metrics, auth: "{{ _alloy_auth_metrics }}"}
+        - {endpoint: logs, auth: "{{ _alloy_auth_logs }}"}
+      loop_control:
+        loop_var: _alloy_endpoint
+        label: "{{ _alloy_endpoint.endpoint }}"

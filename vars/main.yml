@@ -1,0 +1,83 @@
+---
+# Auth efectiva por endpoint: alloy_auth con los campos que pisa cada uno.
+_alloy_auth_metrics: "{{ alloy_auth | combine(alloy_metrics_auth, recursive=true) }}"
+_alloy_auth_logs: "{{ alloy_auth | combine(alloy_logs_auth, recursive=true) }}"
+
+_alloy_auth_types: [none, basic, bearer, header, oauth2]
+
+_alloy_priority_map:
+  emerg: 0
+  alert: 1
+  crit: 2
+  err: 3
+  warning: 4
+  notice: 5
+  info: 6
+  debug: 7
+
+_alloy_arch_map:
+  x86_64: amd64
+  aarch64: arm64
+
+# Se separan de ansible_facts para poder probar las validaciones.
+_alloy_distribution: "{{ ansible_facts['distribution'] }}"
+_alloy_distribution_major: "{{ ansible_facts['distribution_major_version'] }}"
+
+# Versiones mayores soportadas por distribución.
+_alloy_supported_os:
+  Debian: ["11", "12", "13"]
+  Ubuntu: ["20", "22", "24"]
+  RedHat: ["8", "9", "10"]
+  Rocky: ["8", "9", "10"]
+  AlmaLinux: ["8", "9", "10"]
+  OracleLinux: ["8", "9", "10"]
+  Amazon: ["2023"]
+
+# Hay algún pipeline de logs encendido.
+_alloy_logs_on: "{{ alloy_logs_journal_enabled | bool or (alloy_log_files | length > 0) }}"
+
+# Paquete del release para este host.
+_alloy_arch: "{{ _alloy_arch_map[ansible_facts['architecture']] | default(ansible_facts['architecture']) }}"
+_alloy_pkg_ext: "{{ 'deb' if ansible_facts['os_family'] == 'Debian' else 'rpm' }}"
+_alloy_pkg_name: "alloy-{{ alloy_version }}-1.{{ _alloy_arch }}.{{ _alloy_pkg_ext }}"
+_alloy_pkg_url: "{{ alloy_download_base_url }}/v{{ alloy_version }}/{{ _alloy_pkg_name }}"
+_alloy_checksum_url: "{{ alloy_download_base_url }}/v{{ alloy_version }}/SHA256SUMS"
+_alloy_cache_dir: /var/cache/alloy
+_alloy_controller_cache_dir: "{{ lookup('ansible.builtin.env', 'HOME') }}/.cache/mikroways-alloy"
+_alloy_env_file: "{{ '/etc/default/alloy' if ansible_facts['os_family'] == 'Debian' else '/etc/sysconfig/alloy' }}"
+_alloy_conf_dir: /etc/alloy/conf.d
+_alloy_secrets_dir: /etc/alloy/secrets
+_alloy_staging_dir: /var/lib/alloy/staging
+_alloy_conf_backup_dir: /var/lib/alloy/conf.d.prev
+_alloy_listen_addr: "127.0.0.1:12345"
+
+# Entorno de proxy para las descargas desde el host.
+_alloy_proxy_env: >-
+  {{ {} if alloy_proxy_url | length == 0 else
+     {'https_proxy': alloy_proxy_url, 'HTTPS_PROXY': alloy_proxy_url,
+      'http_proxy': alloy_proxy_url, 'HTTP_PROXY': alloy_proxy_url,
+      'no_proxy': alloy_no_proxy, 'NO_PROXY': alloy_no_proxy} }}
+
+# Labels comunes, como external_labels en métricas y logs.
+_alloy_common_labels: >-
+  {{ {'cliente': alloy_labels_cliente | string, 'entorno': alloy_labels_entorno | string,
+      'host': alloy_labels_host | string, 'os': 'linux'} | combine(alloy_extra_labels) }}
+
+# Archivos de config (sin extensión) que genera el rol en conf.d/.
+_alloy_conf_files: >-
+  {{ ['00-envio']
+     + (['10-host'] if alloy_host_metrics_enabled | bool else [])
+     + (['20-servicios'] if alloy_processes | length > 0 else [])
+     + (['30-teleport'] if (_alloy_teleport_on | default(false) | bool) and alloy_teleport_diag_addr | length > 0 else [])
+     + (['40-journal'] if alloy_logs_journal_enabled | bool else [])
+     + (['50-archivos'] if alloy_log_files | length > 0 else [])
+     + (['90-self'] if alloy_self_monitoring_enabled | bool else []) }}
+
+# Collectors efectivos: systemd solo si hay units vigiladas (Tarea 6).
+_alloy_collectors: >-
+  {{ (alloy_unix_collectors + (['systemd'] if (_alloy_units | default([])) | length > 0 else []))
+     | unique | list }}
+
+# CA efectiva para TLS ("" = la del sistema).
+_alloy_ca_file: >-
+  {{ (_alloy_secrets_dir ~ '/ca.pem') if alloy_tls_ca_pem | length > 0 else alloy_tls_ca_file }}

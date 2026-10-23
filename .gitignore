@@ -1,0 +1,7 @@
+.venv/
+.superpowers/
+__pycache__/
+*.retry
+molecule/resources/receiver/.ca/
+.ansible/
+collections/

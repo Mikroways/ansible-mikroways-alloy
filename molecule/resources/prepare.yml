@@ -1,0 +1,230 @@
+---
+# Levanta el receptor falso (Prometheus, Loki, nginx con auth/TLS y tinyproxy)
+# en contenedores junto a los hosts de prueba.
+- name: Receptor falso
+  hosts: localhost
+  gather_facts: false
+  vars:
+    _res: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/molecule/resources/receiver"
+    _ca: "{{ _res }}/.ca"
+    # Se pueden pisar desde el escenario (por ejemplo, para rotar el password).
+    receiver_metrics_password: "{{ lookup('env', 'RECEIVER_METRICS_PASSWORD') | default('metrics-pass', true) }}"
+    receiver_logs_password: logs-pass
+  tasks:
+    - name: Crear directorios de la CA y la auth de prueba
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ _ca }}"
+        - "{{ _ca }}/auth"
+
+    - name: Generar la CA de prueba
+      ansible.builtin.command:
+        cmd: >-
+          openssl req -x509 -newkey rsa:2048 -nodes -days 30
+          -subj "/CN=alloy-test-ca" -keyout {{ _ca }}/ca.key -out {{ _ca }}/ca.crt
+        creates: "{{ _ca }}/ca.crt"
+
+    - name: Generar el certificado de receiver.test
+      ansible.builtin.shell:
+        cmd: >-
+          set -e;
+          openssl req -newkey rsa:2048 -nodes -subj "/CN=receiver.test"
+          -keyout {{ _ca }}/server.key -out {{ _ca }}/server.csr;
+          printf 'subjectAltName=DNS:receiver.test\n' > {{ _ca }}/san.ext;
+          openssl x509 -req -in {{ _ca }}/server.csr -CA {{ _ca }}/ca.crt -CAkey {{ _ca }}/ca.key
+          -CAcreateserial -days 30 -extfile {{ _ca }}/san.ext -out {{ _ca }}/server.crt;
+          chmod 0644 {{ _ca }}/server.key
+        creates: "{{ _ca }}/server.crt"
+
+    - name: Generar los htpasswd de prueba
+      ansible.builtin.shell:
+        cmd: >-
+          set -e;
+          printf '{{ item.user }}:%s\n' "$(openssl passwd -apr1 '{{ item.pass }}')"
+          > {{ _ca }}/auth/{{ item.file }}.htpasswd
+      loop:
+        - {file: metrics, user: metrics-user, pass: "{{ receiver_metrics_password }}"}
+        - {file: logs, user: logs-user, pass: "{{ receiver_logs_password }}"}
+        - {file: oauth2, user: test-client, pass: test-secret}
+      changed_when: true
+
+    - name: Crear las redes de prueba
+      community.docker.docker_network:
+        name: "{{ item.name }}"
+        internal: "{{ item.internal }}"
+      loop:
+        - {name: alloy-test, internal: false}
+        - {name: alloy-internal, internal: true}
+
+    - name: Levantar Prometheus con remote-write receiver
+      community.docker.docker_container:
+        name: alloy-test-prometheus
+        image: docker.io/prom/prometheus:latest
+        command:
+          - --config.file=/etc/prometheus/prometheus.yml
+          - --storage.tsdb.path=/prometheus
+          - --web.enable-remote-write-receiver
+        networks: [{name: alloy-test}]
+        published_ports: ["127.0.0.1:19090:9090"]
+        state: started
+
+    - name: Levantar Loki
+      community.docker.docker_container:
+        name: alloy-test-loki
+        image: docker.io/grafana/loki:3.5.5
+        command: ["-config.file=/etc/loki/test.yaml"]
+        volumes: ["{{ _res }}/loki.yaml:/etc/loki/test.yaml:ro"]
+        networks: [{name: alloy-test}]
+        published_ports: ["127.0.0.1:13100:3100"]
+        state: started
+
+    - name: Levantar nginx (auth y TLS)
+      community.docker.docker_container:
+        name: alloy-test-receiver
+        image: docker.io/library/nginx:1.27-alpine
+        command:
+          - sh
+          - -c
+          - >-
+            R=$(awk '/^nameserver/{print $2; exit}' /etc/resolv.conf);
+            sed "s/__RESOLVER__/$R/" /etc/nginx/test.conf.tpl > /etc/nginx/nginx.conf;
+            exec nginx -g 'daemon off;'
+        volumes:
+          - "{{ _res }}/nginx.conf:/etc/nginx/test.conf.tpl:ro"
+          - "{{ _ca }}/server.crt:/etc/nginx/certs/server.crt:ro"
+          - "{{ _ca }}/server.key:/etc/nginx/certs/server.key:ro"
+          - "{{ _ca }}/auth:/etc/nginx/auth:ro"
+        networks:
+          - name: alloy-test
+            aliases: [receiver.test]
+        state: started
+
+    - name: Levantar tinyproxy
+      community.docker.docker_container:
+        name: alloy-test-proxy
+        image: docker.io/library/alpine:3.20
+        command: ["sh", "-c", "apk add --no-cache tinyproxy >/dev/null && exec tinyproxy -d -c /etc/tinyproxy/test.conf"]
+        volumes: ["{{ _res }}/tinyproxy.conf:/etc/tinyproxy/test.conf:ro"]
+        networks:
+          - name: alloy-test
+          - name: alloy-internal
+        state: started
+
+    - name: Recargar nginx (toma htpasswd nuevos)
+      community.docker.docker_container_exec:
+        container: alloy-test-receiver
+        command: nginx -s reload
+      changed_when: false
+
+    - name: Esperar a Prometheus y Loki
+      ansible.builtin.uri:
+        url: "{{ item }}"
+      register: _ready
+      until: _ready.status == 200
+      retries: 30
+      delay: 2
+      loop:
+        - http://127.0.0.1:19090/-/ready
+        - http://127.0.0.1:13100/ready
+
+# EL8 trae Python 3.6 y ansible-core 2.19+ necesita 3.8+: se instala
+# python3.11 (AppStream) antes de juntar facts. Ver README.
+- name: Python para EL8
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Instalar python3.11 si el host solo tiene platform-python 3.6
+      ansible.builtin.raw: >-
+        if [ -x /usr/libexec/platform-python3.6 ] && ! command -v python3.11 >/dev/null; then
+        dnf -y -q install python3.11; fi
+      changed_when: false
+
+# Lo que las pruebas esperan encontrar en cada host.
+- name: Preparar los hosts de prueba
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Leer las units del host
+      ansible.builtin.service_facts:
+
+    # Por comando: en EL8 el módulo dnf no anda con ansible-core 2.19+.
+    - name: Instalar chrony si el host no tiene servicio de hora
+      ansible.builtin.shell:
+        cmd: >-
+          if command -v apt-get >/dev/null; then
+          apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq chrony;
+          else dnf -y -q install chrony; fi
+      changed_when: true
+      when:
+        - not (alloy_test_offline | default(false))
+        - "'chrony.service' not in ansible_facts.services"
+        - "'chronyd.service' not in ansible_facts.services"
+        - "'systemd-timesyncd.service' not in ansible_facts.services"
+
+    - name: Crear una unit de prueba que tiene que estar activa
+      ansible.builtin.copy:
+        dest: /etc/systemd/system/alloy-test-dummy.service
+        mode: "0644"
+        content: |
+          [Unit]
+          Description=Unit de prueba del rol alloy
+          [Service]
+          ExecStart=/bin/sleep infinity
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Arrancar la unit de prueba
+      ansible.builtin.systemd_service:
+        name: alloy-test-dummy.service
+        state: started
+        enabled: true
+        daemon_reload: true
+
+    - name: Crear el directorio de textfile
+      ansible.builtin.file:
+        path: /var/lib/node_exporter
+        state: directory
+        mode: "0755"
+
+    - name: Publicar una métrica de backup de prueba
+      ansible.builtin.copy:
+        dest: /var/lib/node_exporter/backup_test.prom
+        mode: "0644"
+        content: |
+          # HELP backup_test_last_success_timestamp_seconds Último backup OK.
+          # TYPE backup_test_last_success_timestamp_seconds gauge
+          backup_test_last_success_timestamp_seconds 1792700000
+          # HELP otro_metric_test No pasa la allowlist.
+          # TYPE otro_metric_test gauge
+          otro_metric_test 1
+
+    # El archivo existe desde antes de que arranque Alloy (tail desde el final).
+    - name: Crear el archivo de log de prueba
+      ansible.builtin.copy:
+        dest: /var/log/alloy-test.log
+        content: ""
+        mode: "0644"
+        force: false
+
+    - name: Crear el directorio del segundo log de prueba
+      ansible.builtin.file:
+        path: /var/log/alloy-test2
+        state: directory
+        mode: "0755"
+
+    - name: Crear el segundo archivo de log de prueba
+      ansible.builtin.copy:
+        dest: /var/log/alloy-test2/app.log
+        content: ""
+        mode: "0644"
+        force: false
+
+    - name: Crear un log que alloy no puede leer (para el warning)
+      ansible.builtin.copy:
+        dest: /var/log/alloy-test-privado.log
+        content: ""
+        mode: "0600"
+        force: false

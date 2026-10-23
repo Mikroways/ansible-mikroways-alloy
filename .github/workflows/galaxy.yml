@@ -1,0 +1,19 @@
+---
+name: Publicación en Galaxy
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  import:
+    name: Importar en Ansible Galaxy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Importar el rol
+        uses: robertdebock/galaxy-action@1.2.0
+        with:
+          git_branch: main
+          galaxy_api_key: ${{ secrets.GALAXY_API_KEY }}

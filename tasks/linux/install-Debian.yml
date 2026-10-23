@@ -1,0 +1,7 @@
+---
+- name: Instalar el paquete de Alloy (deb)
+  ansible.builtin.apt:
+    deb: "{{ _alloy_cache_dir }}/{{ _alloy_pkg_name }}"
+    allow_downgrade: true
+    dpkg_options: force-confdef,force-confold
+  register: _alloy_pkg_result

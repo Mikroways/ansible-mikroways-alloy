@@ -1,0 +1,74 @@
+---
+# Desinstalación limpia. La marca de textfile se lee antes de borrar
+# /var/lib/alloy, que es donde vive.
+- name: Leer la marca del directorio de textfile
+  ansible.builtin.slurp:
+    src: /var/lib/alloy/.textfile-created
+  register: _alloy_textfile_mark
+  failed_when: false
+
+- name: Leer las units del host
+  ansible.builtin.service_facts:
+
+- name: Parar y deshabilitar el servicio
+  ansible.builtin.systemd_service:
+    name: alloy
+    state: stopped
+    enabled: false
+  when: "'alloy.service' in ansible_facts.services"
+
+- name: Leer la versión instalada de Alloy
+  ansible.builtin.include_tasks: installed-version.yml
+
+- name: Quitar el hold del paquete (Debian)
+  ansible.builtin.dpkg_selections:
+    name: alloy
+    selection: install
+  when:
+    - ansible_facts['os_family'] == 'Debian'
+    - _alloy_installed_version | length > 0
+
+- name: Desinstalar el paquete (Debian)
+  ansible.builtin.apt:
+    name: alloy
+    state: absent
+    purge: true
+  when:
+    - ansible_facts['os_family'] == 'Debian'
+    - _alloy_installed_version | length > 0
+
+- name: Desinstalar el paquete (RedHat)
+  ansible.builtin.command:
+    argv: [rpm, -e, alloy]
+  changed_when: true
+  when:
+    - ansible_facts['os_family'] == 'RedHat'
+    - _alloy_installed_version | length > 0
+
+- name: Borrar config, secretos, datos y caché
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/alloy
+    - "{{ _alloy_env_file }}"
+    - /var/lib/alloy
+    - "{{ _alloy_cache_dir }}"
+
+- name: Borrar el directorio de textfile (solo si lo creó el rol)
+  ansible.builtin.file:
+    path: "{{ _alloy_textfile_mark.content | b64decode | trim }}"
+    state: absent
+  when: _alloy_textfile_mark.content is defined
+
+- name: Borrar el usuario alloy
+  ansible.builtin.user:
+    name: alloy
+    state: absent
+  when: alloy_remove_user | bool
+
+- name: Borrar el grupo alloy
+  ansible.builtin.group:
+    name: alloy
+    state: absent
+  when: alloy_remove_user | bool

@@ -1,0 +1,18 @@
+// {{ ansible_managed }}
+// Métricas del propio Alloy, para detectar cuando deja de enviar.
+prometheus.exporter.self "alloy" {}
+
+discovery.relabel "self" {
+  targets = prometheus.exporter.self.alloy.targets
+
+  rule {
+    target_label = "job"
+    replacement  = "integrations/alloy"
+  }
+}
+
+prometheus.scrape "self" {
+  targets         = discovery.relabel.self.output
+  scrape_interval = {{ alloy_scrape_interval | to_json }}
+  forward_to      = [prometheus.relabel.comun.receiver]
+}

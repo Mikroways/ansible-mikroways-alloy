@@ -1,0 +1,28 @@
+// {{ ansible_managed }}
+// Archivos de log: solo las líneas que matchean el regex de nivel.
+{% import 'macros.j2' as m with context %}
+{% for f in alloy_log_files %}
+{%   set id = 'archivo_' ~ loop.index %}
+{%   set level = f.level_regex | default(alloy_log_files_default_level_regex) %}
+
+local.file_match "{{ id }}" {
+  path_targets = [{{ m.labels_map({'__path__': f.path, 'job': 'integrations/logfile'} | combine(f.labels | default({}))) }}]
+}
+
+loki.source.file "{{ id }}" {
+  targets       = local.file_match.{{ id }}.targets
+  tail_from_end = true
+  forward_to    = [loki.process.{{ id }}.receiver]
+}
+
+loki.process "{{ id }}" {
+  forward_to = [loki.write.default.receiver]
+
+  stage.match {
+    // filename lo pone siempre loki.source.file: el filtro no depende de
+    // labels que el ítem pueda pisar (por ejemplo job).
+    selector = {{ ('{filename=~".+"} !~ ' ~ (level | to_json)) | to_json }}
+    action   = "drop"
+  }
+}
+{% endfor %}

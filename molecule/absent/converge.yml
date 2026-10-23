@@ -1,0 +1,10 @@
+---
+- name: Converge (desinstalar)
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Aplicar el rol con alloy_state absent
+      ansible.builtin.include_role:
+        name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+      vars:
+        alloy_state: absent

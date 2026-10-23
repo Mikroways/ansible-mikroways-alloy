@@ -1,0 +1,74 @@
+---
+dependency:
+  name: galaxy
+  options:
+    requirements-file: meta/requirements.yml
+driver:
+  name: docker
+platforms:
+  - &plataforma
+    name: alloy-ubuntu2404
+    image: docker.io/geerlingguy/docker-ubuntu2404-ansible:latest
+    pre_build_image: true
+    privileged: true
+    cgroupns_mode: host
+    command: ""
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    # /var/cache/alloy en tmpfs: el paquete (~170 MB) no ocupa disco en las pruebas.
+    tmpfs:
+      - /run
+      - /tmp
+      - /var/cache/alloy
+    networks:
+      - name: alloy-test
+  - <<: *plataforma
+    name: alloy-rockylinux9
+    image: docker.io/geerlingguy/docker-rockylinux9-ansible:latest
+provisioner:
+  name: ansible
+  playbooks:
+    prepare: ../resources/prepare.yml
+    cleanup: ../resources/cleanup.yml
+  inventory:
+    group_vars:
+      all:
+        alloy_labels_cliente: test
+        alloy_labels_entorno: ci
+        alloy_metrics_url: https://receiver.test/basic/api/prom/push
+        alloy_logs_url: https://receiver.test/basic/loki/api/v1/push
+        alloy_auth:
+          type: basic
+          password: "{{ lookup('env', 'RECEIVER_METRICS_PASSWORD') | default('metrics-pass', true) }}"
+        alloy_metrics_auth:
+          username: metrics-user
+        alloy_logs_auth:
+          username: logs-user
+          password: logs-pass
+        alloy_systemd_units:
+          - alloy-test-dummy.service
+          - no-existe.service
+        alloy_processes:
+          - {name: sleep, cmdline_regex: "sleep infinity"}
+        alloy_log_files:
+          - path: /var/log/alloy-test*.log
+            labels: {app: test}
+        alloy_tls_ca_pem: "{{ lookup('file', lookup('env', 'MOLECULE_PROJECT_DIRECTORY') ~ '/molecule/resources/receiver/.ca/ca.crt') }}"
+verifier:
+  name: ansible
+scenario:
+  test_sequence:
+    - dependency
+    - cleanup
+    - destroy
+    - syntax
+    - create
+    - prepare
+    - converge
+    - idempotence
+    - side_effect
+    - check
+    - converge
+    - verify
+    - cleanup
+    - destroy

@@ -1,0 +1,61 @@
+---
+- name: Verify
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Leer los paquetes instalados
+      ansible.builtin.package_facts:
+
+    - name: Verificar que el paquete no está
+      ansible.builtin.assert:
+        that: "'alloy' not in ansible_facts.packages"
+
+    - name: Buscar lo que dejó el rol
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      register: _paths
+      loop:
+        - /etc/alloy
+        - /etc/default/alloy
+        - /etc/sysconfig/alloy
+        - /var/lib/alloy
+        - /var/cache/alloy
+        - /var/lib/alloy-textfile-test
+
+    - name: Verificar que no quedó nada
+      ansible.builtin.assert:
+        that: not item.stat.exists
+        fail_msg: "Quedó {{ item.item }}"
+        quiet: true
+      loop: "{{ _paths.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    - name: Buscar el directorio de textfile que ya existía
+      ansible.builtin.stat:
+        path: /var/lib/node_exporter
+      register: _preexistente
+
+    - name: Verificar que el rol no borró lo que no creó
+      ansible.builtin.assert:
+        that: _preexistente.stat.exists
+
+    - name: Leer el estado del servicio
+      ansible.builtin.command: systemctl status alloy  # noqa: command-instead-of-module
+      register: _status
+      changed_when: false
+      failed_when: false
+
+    - name: Verificar que el servicio no existe
+      ansible.builtin.assert:
+        that: _status.rc != 0
+
+    - name: Buscar el usuario alloy
+      ansible.builtin.command: getent passwd alloy
+      register: _user
+      changed_when: false
+      failed_when: false
+
+    - name: Verificar que se borró el usuario (alloy_remove_user)
+      ansible.builtin.assert:
+        that: _user.rc != 0

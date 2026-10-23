@@ -1,0 +1,70 @@
+---
+# Consulta el receptor falso desde el controlador.
+# Entradas:
+#   verify_prom_queries: [{query: <PromQL>, expect: present|absent}]
+#   verify_loki_queries: [{query: <LogQL>, expect: present|absent}]
+# Las "present" se reintentan (30 x 5s). Las "absent" se consultan una vez,
+# después de las "present", así ya hubo tiempo de que llegaran.
+- name: Esperar series presentes en Prometheus
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:19090/api/v1/query?query={{ item.query | urlencode }}"
+    return_content: true
+  register: _verify_r
+  until: (_verify_r.json.data.result | default([])) | length > 0
+  retries: 30
+  delay: 5
+  delegate_to: localhost
+  loop: "{{ verify_prom_queries | default([]) | selectattr('expect', 'equalto', 'present') | list }}"
+  loop_control:
+    label: "{{ item.query }}"
+
+- name: Esperar logs presentes en Loki
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:13100/loki/api/v1/query_range?query={{ item.query | urlencode }}&since=30m&limit=5"
+    return_content: true
+  register: _verify_l
+  until: (_verify_l.json.data.result | default([])) | length > 0
+  retries: 30
+  delay: 5
+  delegate_to: localhost
+  loop: "{{ verify_loki_queries | default([]) | selectattr('expect', 'equalto', 'present') | list }}"
+  loop_control:
+    label: "{{ item.query }}"
+
+- name: Consultar series que no deben estar
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:19090/api/v1/query?query={{ item.query | urlencode }}"
+    return_content: true
+  register: _verify_ra
+  delegate_to: localhost
+  loop: "{{ verify_prom_queries | default([]) | selectattr('expect', 'equalto', 'absent') | list }}"
+  loop_control:
+    label: "{{ item.query }}"
+
+- name: Verificar que no estén
+  ansible.builtin.assert:
+    that: item.json.data.result | length == 0
+    fail_msg: "No debía llegar: {{ item.item.query }} → {{ item.json.data.result | length }} series"
+    quiet: true
+  loop: "{{ _verify_ra.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.query }}"
+
+- name: Consultar logs que no deben estar
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:13100/loki/api/v1/query_range?query={{ item.query | urlencode }}&since=30m&limit=5"
+    return_content: true
+  register: _verify_la
+  delegate_to: localhost
+  loop: "{{ verify_loki_queries | default([]) | selectattr('expect', 'equalto', 'absent') | list }}"
+  loop_control:
+    label: "{{ item.query }}"
+
+- name: Verificar que no estén los logs
+  ansible.builtin.assert:
+    that: item.json.data.result | length == 0
+    fail_msg: "No debía llegar: {{ item.item.query }}"
+    quiet: true
+  loop: "{{ _verify_la.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.query }}"

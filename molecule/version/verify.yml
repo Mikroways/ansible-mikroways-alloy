@@ -1,0 +1,26 @@
+---
+- name: Verify
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Leer la versión de Alloy instalada
+      ansible.builtin.command: alloy --version
+      register: _version
+      changed_when: false
+
+    - name: Verificar que volvió a la versión fijada
+      ansible.builtin.assert:
+        that: "'v1.21.1' in _version.stdout"
+        fail_msg: "Versión inesperada: {{ _version.stdout_lines | first | default('') }}"
+
+    # En RedHat no hay dpkg: rc != 0 y se saltea.
+    - name: Leer la selección de dpkg (Debian)
+      ansible.builtin.command: dpkg --get-selections alloy
+      register: _sel
+      changed_when: false
+      failed_when: false
+
+    - name: Verificar el hold (Debian)
+      ansible.builtin.assert:
+        that: "'hold' in _sel.stdout"
+      when: _sel.rc == 0

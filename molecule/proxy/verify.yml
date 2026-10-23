@@ -1,0 +1,19 @@
+---
+- name: Verificar el envío
+  ansible.builtin.import_playbook: ../resources/verify-envio.yml
+
+- name: Verificar que el tráfico pasó por el proxy
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Leer el log de tinyproxy
+      community.docker.docker_container_exec:
+        container: alloy-test-proxy
+        command: cat /tmp/tinyproxy.log
+      register: _proxy_log
+      changed_when: false
+
+    - name: Verificar el CONNECT al receptor
+      ansible.builtin.assert:
+        that: "'CONNECT receiver.test:443' in _proxy_log.stdout"
+        fail_msg: "tinyproxy no registró CONNECT receiver.test:443"

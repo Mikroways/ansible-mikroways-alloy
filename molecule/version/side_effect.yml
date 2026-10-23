@@ -1,0 +1,198 @@
+---
+# Downgrade a mano y volver a converger: queda la versión fijada.
+- name: Instalar una versión anterior a mano
+  hosts: all
+  gather_facts: true
+  vars:
+    _old: "1.21.0"
+    _arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts['architecture']] }}"
+    _ext: "{{ 'deb' if ansible_facts['os_family'] == 'Debian' else 'rpm' }}"
+    _pkg: "alloy-{{ _old }}-1.{{ _arch }}.{{ _ext }}"
+  tasks:
+    - name: Bajar el paquete viejo
+      ansible.builtin.get_url:
+        url: "https://github.com/grafana/alloy/releases/download/v{{ _old }}/{{ _pkg }}"
+        dest: "/tmp/{{ _pkg }}"
+        mode: "0644"
+
+    - name: Instalar el paquete viejo (Debian)
+      ansible.builtin.command: "dpkg -i --force-confold /tmp/{{ _pkg }}"
+      changed_when: true
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Instalar el paquete viejo (RedHat)
+      ansible.builtin.command: "rpm -U --oldpackage --nodeps /tmp/{{ _pkg }}"  # noqa: command-instead-of-module
+      changed_when: true
+      when: ansible_facts['os_family'] == 'RedHat'
+
+    - name: Borrar el paquete viejo
+      ansible.builtin.file:
+        path: "/tmp/{{ _pkg }}"
+        state: absent
+
+- name: Volver a converger
+  ansible.builtin.import_playbook: converge.yml
+
+# Downgrade real: la versión fijada es menor que la instalada.
+- name: Fijar una versión menor que la instalada
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Aplicar el rol con alloy_version 1.21.0
+      ansible.builtin.include_role:
+        name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+      vars:
+        alloy_version: "1.21.0"
+
+    - name: Leer la versión instalada
+      ansible.builtin.command: alloy --version
+      register: _down
+      changed_when: false
+
+    - name: Verificar el downgrade
+      ansible.builtin.assert:
+        that: "'v1.21.0' in _down.stdout"
+        fail_msg: "No hizo downgrade: {{ _down.stdout_lines | first }}"
+
+- name: Volver a la versión fijada después del downgrade
+  ansible.builtin.import_playbook: converge.yml
+
+# Adopción de un Alloy que corre con otra config: si la config del rol no carga
+# al reiniciar, el rol tiene que fallar y dejar Alloy andando.
+- name: Adopción con config que no carga
+  hosts: all
+  gather_facts: true
+  vars:
+    _env_file: "{{ '/etc/default/alloy' if ansible_facts['os_family'] == 'Debian' else '/etc/sysconfig/alloy' }}"
+  tasks:
+    - name: Simular un Alloy instalado por otra vía (config.alloy del paquete)
+      ansible.builtin.copy:
+        dest: "{{ _env_file }}"
+        mode: "0644"
+        content: |
+          CONFIG_FILE="/etc/alloy/config.alloy"
+          CUSTOM_ARGS="--server.http.listen-addr=127.0.0.1:12345"
+          RESTART_ON_UPGRADE=false
+
+    - name: Reiniciar Alloy con esa config
+      ansible.builtin.systemd_service:
+        name: alloy
+        state: restarted
+
+    - name: Converger con un componente que no se puede construir
+      block:
+        - name: Aplicar el rol con un selector inválido
+          ansible.builtin.include_role:
+            name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+          vars:
+            alloy_extra_config_files:
+              - name: no-carga
+                content: |
+                  loki.process "no_carga" {
+                    forward_to = []
+                    stage.match {
+                      selector = "{a=b}"
+                      action   = "drop"
+                    }
+                  }
+        - name: Fallar si el rol aceptó la config que no carga
+          ansible.builtin.fail:
+            msg: El rol debía fallar con la config que no carga
+      rescue:
+        - name: Verificar que falló al aplicar la config
+          ansible.builtin.assert:
+            that: ansible_failed_task.name is search('Aplicar la config')
+            fail_msg: "Falló otra tarea: {{ ansible_failed_task.name }}"
+            quiet: true
+
+    - name: Leer el estado del servicio
+      ansible.builtin.command: systemctl is-active alloy  # noqa: command-instead-of-module
+      register: _act
+      changed_when: false
+      failed_when: false
+      retries: 5
+      delay: 2
+      until: _act.stdout == 'active'
+
+    - name: Verificar que Alloy sigue andando con la config restaurada
+      ansible.builtin.assert:
+        that: _act.stdout == 'active'
+
+- name: Converger normal después de la adopción
+  ansible.builtin.import_playbook: converge.yml
+
+# Otro proceso (por ejemplo Grafana Agent) en el puerto de Alloy: el rol no
+# puede dar por buena una instalación que no está atendiendo.
+- name: Puerto de Alloy tomado por otro proceso
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Parar Alloy
+      ansible.builtin.systemd_service:
+        name: alloy
+        state: stopped
+
+    - name: Levantar un servidor que contesta 200 a todo en 12345
+      ansible.builtin.command: >-
+        systemd-run --unit=fake-agent /usr/bin/python3 -c
+        "from http.server import BaseHTTPRequestHandler as B, HTTPServer as S;
+        H=type('H',(B,),{'do_GET':lambda s:(s.send_response(200),s.end_headers()),
+        'do_POST':lambda s:(s.send_response(200),s.end_headers()),'log_message':lambda *a:None});
+        S(('127.0.0.1',12345),H).serve_forever()"
+      changed_when: true
+
+    - name: Converger con el puerto tomado
+      block:
+        - name: Aplicar el rol
+          ansible.builtin.include_role:
+            name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+        - name: Fallar si el rol no detectó el puerto tomado
+          ansible.builtin.fail:
+            msg: El rol debía detectar que Alloy no atiende el puerto
+      rescue:
+        - name: Verificar que detectó que el puerto no es de Alloy
+          ansible.builtin.assert:
+            that: ansible_failed_task.name is search('atiende')
+            fail_msg: "Falló otra tarea: {{ ansible_failed_task.name }}"
+            quiet: true
+
+    - name: Bajar el servidor falso
+      ansible.builtin.systemd_service:
+        name: fake-agent
+        state: stopped
+
+- name: Converger normal al final
+  ansible.builtin.import_playbook: converge.yml
+
+# Queda 1.21.0 instalada: el paso check de la secuencia corre --check con un
+# cambio de versión pendiente (no puede fallar) y el converge siguiente vuelve
+# a la versión fijada.
+- name: Dejar 1.21.0 instalada antes del check
+  hosts: all
+  gather_facts: true
+  vars:
+    _old: "1.21.0"
+    _arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[ansible_facts['architecture']] }}"
+    _ext: "{{ 'deb' if ansible_facts['os_family'] == 'Debian' else 'rpm' }}"
+    _pkg: "alloy-{{ _old }}-1.{{ _arch }}.{{ _ext }}"
+  tasks:
+    - name: Bajar el paquete viejo
+      ansible.builtin.get_url:
+        url: "https://github.com/grafana/alloy/releases/download/v{{ _old }}/{{ _pkg }}"
+        dest: "/tmp/{{ _pkg }}"
+        mode: "0644"
+
+    - name: Instalar el paquete viejo (Debian)
+      ansible.builtin.command: "dpkg -i --force-confold /tmp/{{ _pkg }}"
+      changed_when: true
+      when: ansible_facts['os_family'] == 'Debian'
+
+    - name: Instalar el paquete viejo (RedHat)
+      ansible.builtin.command: "rpm -U --oldpackage --nodeps /tmp/{{ _pkg }}"  # noqa: command-instead-of-module
+      changed_when: true
+      when: ansible_facts['os_family'] == 'RedHat'
+
+    - name: Borrar el paquete viejo
+      ansible.builtin.file:
+        path: "/tmp/{{ _pkg }}"
+        state: absent

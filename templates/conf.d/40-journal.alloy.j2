@@ -1,0 +1,29 @@
+// {{ ansible_managed }}
+// Logs de journald, filtrados en el agente desde {{ alloy_logs_min_priority }} para arriba.
+loki.relabel "journal" {
+  forward_to = []
+
+  // Prioridad 0 (emerg) a {{ _alloy_priority_map[alloy_logs_min_priority] }} ({{ alloy_logs_min_priority }}). El resto se descarta.
+  rule {
+    source_labels = ["__journal_priority"]
+    regex         = "[0-{{ _alloy_priority_map[alloy_logs_min_priority] }}]"
+    action        = "keep"
+  }
+
+  rule {
+    source_labels = ["__journal__systemd_unit"]
+    target_label  = "unit"
+  }
+
+  rule {
+    source_labels = ["__journal_priority_keyword"]
+    target_label  = "level"
+  }
+}
+
+loki.source.journal "journal" {
+  max_age       = {{ alloy_logs_journal_max_age | to_json }}
+  relabel_rules = loki.relabel.journal.rules
+  labels        = {"job" = "integrations/journal"}
+  forward_to    = [loki.write.default.receiver]
+}

@@ -1,0 +1,11 @@
+---
+# rpm -U --oldpackage instala, actualiza o hace downgrade a la versión fijada.
+# Se usa rpm y no el módulo dnf porque en EL8 este necesita los bindings de
+# Python 3.6 de la plataforma. El paquete de Alloy no tiene dependencias que
+# resolver. El release no firma los paquetes con GPG: la integridad la da el
+# sha256 verificado contra SHA256SUMS en la descarga.
+- name: Instalar el paquete de Alloy (rpm)
+  ansible.builtin.command:
+    argv: [rpm, -U, --oldpackage, --replacepkgs, --nosignature, "{{ _alloy_cache_dir }}/{{ _alloy_pkg_name }}"]
+  changed_when: true
+  register: _alloy_pkg_result

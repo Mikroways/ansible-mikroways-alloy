@@ -1,0 +1,11 @@
+---
+- name: Preparar receptor y hosts
+  ansible.builtin.import_playbook: ../resources/prepare.yml
+
+- name: Instalar Alloy con el rol
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Aplicar el rol (present)
+      ansible.builtin.include_role:
+        name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"

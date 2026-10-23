@@ -1,0 +1,10 @@
+// {{ ansible_managed }}
+// Métricas del agente de Teleport (diag_addr). process_state dice si el agente
+// está conectado al cluster (0 = ok).
+prometheus.scrape "teleport" {
+  targets         = [{"__address__" = {{ alloy_teleport_diag_addr | to_json }}}]
+  metrics_path    = "/metrics"
+  job_name        = "integrations/teleport"
+  scrape_interval = {{ alloy_scrape_interval | to_json }}
+  forward_to      = [prometheus.relabel.comun.receiver]
+}

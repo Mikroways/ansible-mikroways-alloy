@@ -1,0 +1,24 @@
+---
+- name: Validar variables
+  ansible.builtin.import_tasks: assert.yml
+
+- name: Instalar y configurar Alloy
+  when: alloy_state == 'present'
+  block:
+    - name: Instalar Alloy
+      ansible.builtin.include_tasks: linux/install.yml
+
+    # En --check sobre un host sin Alloy no existen todavía los directorios
+    # de config ni el binario para validar: se informa y no se renderiza.
+    - name: Informar que la config se genera en la primera corrida (--check)
+      ansible.builtin.debug:
+        msg: Alloy no está instalado en este host; la config se genera y valida en la corrida sin --check.
+      when: ansible_check_mode and _alloy_installed_version | length == 0
+
+    - name: Configurar Alloy
+      ansible.builtin.include_tasks: linux/configure.yml
+      when: not (ansible_check_mode and _alloy_installed_version | length == 0)
+
+- name: Desinstalar Alloy
+  ansible.builtin.include_tasks: linux/uninstall.yml
+  when: alloy_state == 'absent'
