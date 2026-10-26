@@ -5,33 +5,57 @@
 
 - name: Detectar NTP y Teleport
   ansible.builtin.set_fact:
-    _alloy_ntp_unit: >-
-      {{ (['chrony.service', 'chronyd.service', 'systemd-timesyncd.service', 'ntpd.service', 'ntp.service']
-          | select('in', ansible_facts.services) | list + [''])[0] }}
+    _alloy_ntp_unit: "{{ _alloy_ntp_unit_detected }}"
     _alloy_teleport_on: >-
       {{ (alloy_teleport_enabled | string | lower == 'true')
          or (alloy_teleport_enabled | string | lower == 'auto' and 'teleport.service' in ansible_facts.services) }}
 
-- name: Calcular las units vigiladas
+- name: Calcular las units pedidas
   ansible.builtin.set_fact:
-    _alloy_units: >-
-      {{ (alloy_systemd_units
+    _alloy_units_requested: >-
+      {{ (_alloy_systemd_units_norm
           + ([_alloy_ntp_unit] if alloy_ntp_autodetect | bool and _alloy_ntp_unit | length > 0 else [])
           + (['teleport.service'] if _alloy_teleport_on | bool else []))
          | unique | list }}
+
+# Una consulta por unit: service_facts solo lista services y no ve instancias
+# de templates que no estén cargadas, y systemctl show con varios nombres
+# corta en el primero inválido. Id es el nombre canónico: el collector de
+# systemd no reporta alias (sshd.service → ssh.service).
+- name: Leer el nombre canónico de las units pedidas
+  ansible.builtin.command:
+    argv: [systemctl, show, --property=Id, --property=LoadState, --, "{{ item }}"]
+  loop: "{{ _alloy_units_requested }}"
+  register: _alloy_units_show
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Calcular las units vigiladas
+  ansible.builtin.set_fact:
+    _alloy_units_missing: "{{ _alloy_units_info | selectattr('missing') | map(attribute='name') | list }}"
+    _alloy_units: "{{ _alloy_units_info | rejectattr('missing') | map(attribute='id') | unique | list }}"
 
 - name: Calcular el filtro de units
   ansible.builtin.set_fact:
     _alloy_units_regex: "^({{ _alloy_units | map('regex_escape') | join('|') }})$"
 
 - name: Avisar de units pedidas que no existen en el host
-  ansible.builtin.debug:
-    msg: "[WARNING] La unit {{ item }} está en alloy_systemd_units pero no existe en {{ inventory_hostname }}."
-  loop: "{{ alloy_systemd_units | reject('in', ansible_facts.services) | list }}"
+  mikroways_alloy_aviso:
+    msg: >-
+      {%- set out = [] -%}
+      {%- for u in alloy_systemd_units -%}
+        {%- set n = _alloy_systemd_units_norm[loop.index0] -%}
+        {%- if n in _alloy_units_missing -%}
+          {%- set _ = out.append('La unit ' ~ n ~ ' está en alloy_systemd_units pero no existe en el host'
+              ~ ((' (se pidió "' ~ u ~ '", sin sufijo, y se tomó como ' ~ n ~ ')') if n != u else '') ~ '.') -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out | unique | list }}
 
 - name: Avisar si Grafana Agent está corriendo
-  ansible.builtin.debug:
+  mikroways_alloy_aviso:
     msg: >-
-      [WARNING] grafana-agent.service está corriendo en {{ inventory_hostname }}.
-      Usa el mismo puerto por defecto (12345) que Alloy; el rol no lo toca.
+      grafana-agent.service está corriendo. Usa el mismo puerto por defecto
+      (12345) que Alloy; el rol no lo toca.
   when: ansible_facts.services['grafana-agent.service'].state | default('') == 'running'

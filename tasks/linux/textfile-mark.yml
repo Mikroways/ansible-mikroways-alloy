@@ -1,0 +1,25 @@
+---
+# Busca una marca válida del directorio de textfile en _mark_paths: archivo
+# regular de root (sin seguir symlinks) cuyo contenido es
+# alloy_textfile_directory. Deja _alloy_textfile_mark_ok.
+- name: Ver las marcas del directorio de textfile
+  ansible.builtin.stat:
+    path: "{{ item }}"
+    follow: false
+  loop: "{{ _mark_paths }}"
+  register: _alloy_mark_stat
+
+- name: Leer las marcas que son archivos de root
+  ansible.builtin.slurp:
+    src: "{{ item.item }}"
+  loop: "{{ _alloy_mark_stat.results | selectattr('stat.isreg', 'defined') | selectattr('stat.isreg') | selectattr('stat.uid', 'equalto', 0) | list }}"
+  loop_control:
+    label: "{{ item.item }}"
+  register: _alloy_mark_content
+  failed_when: false
+
+- name: Validar la marca del directorio de textfile
+  ansible.builtin.set_fact:
+    _alloy_textfile_mark_ok: >-
+      {{ _alloy_mark_content.results | selectattr('content', 'defined') | map(attribute='content')
+         | map('b64decode') | map('trim') | select('equalto', alloy_textfile_directory | string) | list | length > 0 }}

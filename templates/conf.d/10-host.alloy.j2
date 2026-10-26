@@ -12,8 +12,11 @@ prometheus.exporter.unix "host" {
   }
 {% if 'systemd' in _alloy_collectors %}
 
+  // unit_include ya es la lista exacta. El unit_exclude por defecto descarta
+  // .mount, .scope y otros tipos aunque estén pedidos: se apaga.
   systemd {
     unit_include    = {{ _alloy_units_regex | to_json }}
+    unit_exclude    = "^$"
     enable_restarts = {{ alloy_systemd_restarts | bool | lower }}
   }
 {% endif %}

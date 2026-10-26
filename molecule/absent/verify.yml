@@ -31,6 +31,15 @@
       loop_control:
         label: "{{ item.item }}"
 
+    - name: Buscar el directorio de la marca falsificada
+      ansible.builtin.stat:
+        path: /srv/no-borrar
+      register: _forjado
+
+    - name: Verificar que no se siguió la marca falsificada
+      ansible.builtin.assert:
+        that: _forjado.stat.exists
+
     - name: Buscar el directorio de textfile que ya existía
       ansible.builtin.stat:
         path: /var/lib/node_exporter

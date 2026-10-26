@@ -1,0 +1,17 @@
+---
+# Lo corre side_effect.yml con --check sobre los hosts ya convergidos: con un
+# cambio de config, el rol tiene que informar que conf.d cambiaría.
+- name: --check con un cambio de config
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Aplicar el rol con otro scrape_interval
+      ansible.builtin.include_role:
+        name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+      vars:
+        alloy_scrape_interval: 30s
+
+    - name: Verificar que --check informa el cambio
+      ansible.builtin.assert:
+        that: _alloy_conf_would_change | default(false) | bool
+        fail_msg: "--check no informó el cambio de conf.d"

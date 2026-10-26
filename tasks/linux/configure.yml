@@ -1,5 +1,10 @@
 ---
-- name: Crear los directorios de config, secretos y staging
+# Lo pone en true el bloque de aplicación si reinicia Alloy (ver handlers).
+- name: Arrancar sin reinicio registrado
+  ansible.builtin.set_fact:
+    _alloy_restarted: false
+
+- name: Crear los directorios de config y secretos
   ansible.builtin.file:
     path: "{{ item }}"
     state: directory
@@ -9,8 +14,43 @@
   loop:
     - "{{ _alloy_conf_dir }}"
     - "{{ _alloy_secrets_dir }}"
-    - "{{ _alloy_staging_dir }}"
   register: _alloy_dirs
+
+# Staging solo lo usa root (alloy validate); alloy no necesita leerlo.
+- name: Crear el directorio de staging
+  ansible.builtin.file:
+    path: "{{ _alloy_staging_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+# 0.1.0 usaba /var/lib/alloy, el home del usuario alloy. La marca vieja solo
+# se migra si es válida (ver textfile-mark.yml): se escribe una nueva, no se
+# copia el archivo. state: absent borra un symlink sin seguirlo.
+- name: Leer la marca del directorio de textfile de la 0.1.0
+  ansible.builtin.include_tasks: textfile-mark.yml
+  vars:
+    _mark_paths: ["{{ _alloy_legacy_textfile_mark }}"]
+
+- name: Migrar la marca del directorio de textfile de la 0.1.0
+  ansible.builtin.copy:
+    dest: "{{ _alloy_textfile_mark }}"
+    content: "{{ alloy_textfile_directory }}\n"
+    owner: root
+    group: root
+    mode: "0644"
+    force: false
+  when: _alloy_textfile_mark_ok | bool
+
+- name: Borrar staging, backup y marca de la 0.1.0
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ _alloy_legacy_staging_dir }}"
+    - "{{ _alloy_legacy_conf_backup_dir }}"
+    - "{{ _alloy_legacy_textfile_mark }}"
 
 - name: Escribir los secretos
   ansible.builtin.include_tasks: secrets.yml
@@ -37,7 +77,7 @@
 
     - name: Registrar que el directorio de textfile lo creó el rol
       ansible.builtin.copy:
-        dest: /var/lib/alloy/.textfile-created
+        dest: "{{ _alloy_textfile_mark }}"
         content: "{{ alloy_textfile_directory }}\n"
         owner: root
         group: root
@@ -58,6 +98,7 @@
     group: alloy
     mode: "0640"
   loop: "{{ _alloy_conf_files }}"
+  register: _alloy_render
 
 - name: Escribir los archivos extra en staging
   ansible.builtin.copy:
@@ -69,6 +110,7 @@
   loop: "{{ alloy_extra_config_files }}"
   loop_control:
     label: "{{ item.name }}"
+  register: _alloy_render_extra
 
 - name: Listar staging
   ansible.builtin.find:
@@ -84,6 +126,7 @@
   loop_control:
     label: "{{ item.path | basename }}"
   when: (item.path | basename) not in _alloy_expected
+  register: _alloy_staging_pruned
 
 # 2. Se valida el conjunto antes de tocar lo que lee el servicio. Corre
 # siempre (es de solo lectura): staging puede haber quedado con una config
@@ -127,11 +170,20 @@
       {{ _alloy_conf_found.files | map(attribute='path')
          | reject('in', _alloy_expected | map('regex_replace', '^', _alloy_conf_dir ~ '/') | list) | list }}
 
+# En --check staging no se reescribe: lo que cambiaría lo dicen los renders
+# (changed si el contenido nuevo difiere del de staging) más la comparación
+# de staging con conf.d.
+- name: Calcular si conf.d cambiaría
+  ansible.builtin.set_fact:
+    _alloy_conf_would_change: >-
+      {{ _alloy_render is changed or _alloy_render_extra is changed or _alloy_staging_pruned is changed
+         or _alloy_conf_changed or _alloy_conf_extra | length > 0 }}
+
 - name: Mostrar los cambios de conf.d en --check
   ansible.builtin.debug:
-    msg: "conf.d cambiaría: {{ _alloy_conf_changed or _alloy_conf_extra | length > 0 }}"
+    msg: "conf.d cambiaría: {{ _alloy_conf_would_change }}"
   when: ansible_check_mode
-  changed_when: _alloy_conf_changed or _alloy_conf_extra | length > 0
+  changed_when: _alloy_conf_would_change | bool
 
 - name: Aplicar la config nueva
   when:
@@ -185,6 +237,12 @@
             enabled: true
             daemon_reload: true
           when: _alloy_active.stdout != 'active' or _alloy_restart_needed | default(false) | bool
+          register: _alloy_restart
+
+        # El proceso nuevo ya leyó los secretos: el handler de reload sobra.
+        - name: Registrar si Alloy se reinició
+          ansible.builtin.set_fact:
+            _alloy_restarted: "{{ _alloy_restart is changed }}"
 
         - name: Esperar a que Alloy cargue la config (/-/ready)
           ansible.builtin.uri:
@@ -237,19 +295,17 @@
   when: _alloy_installed_version | length > 0 or not ansible_check_mode
 
 - name: Avisar de archivos de log que alloy no puede leer
-  ansible.builtin.debug:
+  mikroways_alloy_aviso:
     msg: >-
-      [WARNING] alloy no puede leer {{ item.stdout_lines | join(', ') }}.
-      El rol no cambia permisos del cliente: sumá alloy a un grupo con
-      alloy_extra_groups o ajustá los permisos.
-  loop: "{{ _alloy_unreadable.results | default([]) }}"
-  loop_control:
-    label: "{{ item.item.path | default('') }}"
-  when: item.stdout_lines | default([]) | length > 0
+      {{ _alloy_unreadable.results | default([]) | map(attribute='stdout_lines', default=[]) | flatten | unique
+         | map('regex_replace', '^', 'alloy no puede leer ')
+         | map('regex_replace', '$', '. El rol no cambia permisos del cliente: sumá alloy a un grupo con'
+               ~ ' alloy_extra_groups o ajustá los permisos.')
+         | list }}
 
 - name: Avisar que la verificación TLS está apagada
-  ansible.builtin.debug:
-    msg: "[WARNING] alloy_tls_insecure_skip_verify está en true: no se verifica el certificado del endpoint."
+  mikroways_alloy_aviso:
+    msg: alloy_tls_insecure_skip_verify está en true, no se verifica el certificado del endpoint.
   when: alloy_tls_insecure_skip_verify | bool
 
 - name: Asegurar que el servicio esté corriendo

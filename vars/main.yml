@@ -47,8 +47,15 @@ _alloy_controller_cache_dir: "{{ lookup('ansible.builtin.env', 'HOME') }}/.cache
 _alloy_env_file: "{{ '/etc/default/alloy' if ansible_facts['os_family'] == 'Debian' else '/etc/sysconfig/alloy' }}"
 _alloy_conf_dir: /etc/alloy/conf.d
 _alloy_secrets_dir: /etc/alloy/secrets
-_alloy_staging_dir: /var/lib/alloy/staging
-_alloy_conf_backup_dir: /var/lib/alloy/conf.d.prev
+# Staging, backup y marca del textfile son de root y viven en /etc/alloy, no
+# en /var/lib/alloy (home del usuario alloy). Alloy carga solo conf.d/.
+_alloy_staging_dir: /etc/alloy/.staging
+_alloy_conf_backup_dir: /etc/alloy/.conf.d.prev
+_alloy_textfile_mark: /etc/alloy/.textfile-created
+# Rutas de la 0.1.0, que el rol borra o migra.
+_alloy_legacy_staging_dir: /var/lib/alloy/staging
+_alloy_legacy_conf_backup_dir: /var/lib/alloy/conf.d.prev
+_alloy_legacy_textfile_mark: /var/lib/alloy/.textfile-created
 _alloy_listen_addr: "127.0.0.1:12345"
 
 # Entorno de proxy para las descargas desde el host.
@@ -62,6 +69,54 @@ _alloy_proxy_env: >-
 _alloy_common_labels: >-
   {{ {'cliente': alloy_labels_cliente | string, 'entorno': alloy_labels_entorno | string,
       'host': alloy_labels_host | string, 'os': 'linux'} | combine(alloy_extra_labels) }}
+
+# Units del host (service_facts). Se separan de ansible_facts para poder
+# probar la detección.
+_alloy_services: "{{ ansible_facts.services | default({}) }}"
+
+# NTP: la primera candidata que está corriendo; si ninguna corre, la primera
+# instalada. Vigilar una instalada pero parada cuando corre otra da una falsa
+# alerta de "NTP caído".
+_alloy_ntp_candidates: [chrony.service, chronyd.service, systemd-timesyncd.service, ntpsec.service, ntpd.service, ntp.service]
+_alloy_ntp_unit_detected: >-
+  {%- set inst = _alloy_ntp_candidates | select('in', _alloy_services) | list -%}
+  {%- set run = inst | select('in', _alloy_services | dict2items
+      | selectattr('value.state', 'defined') | selectattr('value.state', 'equalto', 'running')
+      | map(attribute='key') | list) | list -%}
+  {{ (run + inst + [''])[0] }}
+
+# alloy_systemd_units con .service cuando falta el sufijo, como hace systemctl.
+_alloy_unit_types: [service, socket, device, mount, automount, swap, target, path, timer, slice, scope]
+_alloy_systemd_units_norm: >-
+  {{ alloy_systemd_units | map('string')
+     | map('regex_replace', '^(?!.*\.(?:' ~ (_alloy_unit_types | join('|')) ~ ')$)(.+)$', '\1.service')
+     | list }}
+
+# Resultado de systemctl show por unit pedida (detect.yml): nombre pedido, Id
+# canónico y si falta (rc != 0, not-found o sin Id).
+_alloy_units_info: >-
+  {%- set out = [] -%}
+  {%- for r in _alloy_units_show.results | default([]) -%}
+    {%- set id = (r.stdout | default('') | regex_findall('(?m)^Id=(.+)$') + [''])[0] -%}
+    {%- set missing = r.rc | default(1) != 0 or 'LoadState=not-found' in r.stdout | default('') or id | length == 0 -%}
+    {%- set _ = out.append({'name': r.item, 'id': id, 'missing': missing}) -%}
+  {%- endfor -%}
+  {{ out }}
+
+# No se pueden pisar con alloy_extra_labels.
+_alloy_reserved_labels: [cliente, entorno, host, os]
+
+# Id de cada ítem de alloy_log_files, en el mismo orden: el name o el path
+# pasado a identificador. Es estable aunque se reordene la lista, así no se
+# pierden las posiciones de lectura.
+_alloy_log_file_ids: >-
+  {%- set out = [] -%}
+  {%- for f in alloy_log_files -%}
+    {%- set base = f.name if (f.name | default('') | length > 0)
+       else (f.path | default('') | lower | regex_replace('[^a-z0-9]+', '_') | regex_replace('^_+|_+$', '')) -%}
+    {%- set _ = out.append('archivo_' ~ base) -%}
+  {%- endfor -%}
+  {{ out }}
 
 # Archivos de config (sin extensión) que genera el rol en conf.d/.
 _alloy_conf_files: >-

@@ -9,3 +9,23 @@
     - name: Aplicar el rol (present)
       ansible.builtin.include_role:
         name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+
+# Una marca de la 0.1.0 que dejó el usuario alloy (en su home), apuntando a
+# un directorio que el rol no creó: absent no puede borrarlo.
+- name: Marca vieja falsificada
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Crear un directorio que no es del rol
+      ansible.builtin.file:
+        path: /srv/no-borrar
+        state: directory
+        mode: "0755"
+
+    - name: Escribir la marca como el usuario alloy
+      ansible.builtin.copy:
+        dest: /var/lib/alloy/.textfile-created
+        content: "/srv/no-borrar\n"
+        owner: alloy
+        group: alloy
+        mode: "0644"

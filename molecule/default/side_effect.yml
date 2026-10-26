@@ -1,7 +1,97 @@
 ---
-# 1. Config inválida: el rol falla y conf.d/ queda como estaba.
-# 2. Rotación del password de métricas: Alloy toma el nuevo sin reinstalar.
+# 1. Primera corrida: un solo arranque, sin el reload de los secretos.
+# 2. --check con un cambio de config informa que conf.d cambiaría.
+# 3. Migración desde 0.1.0: --check no falla y staging y backup salen de
+#    /var/lib/alloy.
+# 4. Config inválida: el rol falla y conf.d/ queda como estaba.
+# 5. Rotación del password de métricas: Alloy toma el nuevo sin reinstalar.
 # (El downgrade se prueba en el escenario version.)
+- name: La primera corrida no recarga después de arrancar
+  hosts: all
+  gather_facts: false
+  tasks:
+    # Mensajes de systemd (PID 1) sobre la unit, no los de Alloy.
+    - name: Leer los mensajes de systemd sobre alloy.service
+      ansible.builtin.command: journalctl --no-pager -o cat _PID=1 UNIT=alloy.service
+      register: _systemd_alloy
+      changed_when: false
+
+    - name: Verificar que no hubo reload
+      ansible.builtin.assert:
+        that: _reloads | length == 0
+        fail_msg: "Hubo reload(s) de alloy.service después del arranque: {{ _reloads }}"
+      vars:
+        _reloads: "{{ _systemd_alloy.stdout_lines | select('search', 'Reloading') | list }}"
+
+- name: --check informa los cambios de config
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Correr el rol en --check con otro scrape_interval
+      ansible.builtin.command:
+        argv:
+          - ansible-playbook
+          - --check
+          - -i
+          - "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/inventory"
+          - "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') }}/check-cambio.yml"
+      changed_when: false
+
+- name: Dejar los hosts como la 0.1.0
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Mover staging y backup a /var/lib/alloy, como la 0.1.0
+      ansible.builtin.shell:
+        cmd: >-
+          mv /etc/alloy/.staging /var/lib/alloy/staging &&
+          mv /etc/alloy/.conf.d.prev /var/lib/alloy/conf.d.prev
+      changed_when: true
+
+# El primer --check después de actualizar el rol corre sin /etc/alloy/.staging.
+- name: --check sobre un host con la 0.1.0
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Correr el rol en --check
+      ansible.builtin.command:
+        argv:
+          - ansible-playbook
+          - --check
+          - -i
+          - "{{ lookup('env', 'MOLECULE_EPHEMERAL_DIRECTORY') }}/inventory"
+          - "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') }}/converge.yml"
+      changed_when: false
+
+- name: Migración desde 0.1.0
+  hosts: all
+  gather_facts: true
+  tasks:
+    - name: Aplicar el rol
+      ansible.builtin.include_role:
+        name: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+
+    - name: Leer los directorios viejos
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop: [/var/lib/alloy/staging, /var/lib/alloy/conf.d.prev]
+      register: _viejos
+
+    - name: Verificar que se borraron
+      ansible.builtin.assert:
+        that: _viejos.results | selectattr('stat.exists') | list | length == 0
+        fail_msg: "Quedaron: {{ _viejos.results | selectattr('stat.exists') | map(attribute='item') | list }}"
+
+    # Los avisos de la corrida completa quedan en ansible_facts.alloy_avisos.
+    - name: Verificar los avisos de la corrida
+      ansible.builtin.assert:
+        that:
+          - "'alloy no puede leer /var/log/alloy-test-privado.log. El rol no cambia permisos' in _avisos | join('\n')"
+          - _avisos | select('search', 'no-existe.service') | list | length == 1
+        fail_msg: "Avisos: {{ _avisos }}"
+      vars:
+        _avisos: "{{ ansible_facts.alloy_avisos | default([]) }}"
+
 - name: Config inválida no llega al servicio
   hosts: all
   gather_facts: true

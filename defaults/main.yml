@@ -149,6 +149,21 @@ alloy_logs_journal_enabled: true
 # Prioridad mínima que se envía: emerg, alert, crit, err, warning, notice,
 # info, debug. "warning" envía de emerg a warning.
 alloy_logs_min_priority: warning
+# Normalización del label unit de journald: units con un id por sesión,
+# conexión o contenedor abren un stream nuevo cada vez. Cada regla es
+# {regex, replacement} (regex anclado, $1 para grupos); se aplican en orden
+# y la que no matchea no cambia nada.
+alloy_logs_journal_unit_rewrites:
+  # Logins (sudo, ssh): session-123.scope.
+  - {regex: 'session-[0-9]+\.scope', replacement: session.scope}
+  # systemd-run: run-r3f2a….scope, run-u12.service.
+  - {regex: 'run-[0-9a-z]+\.(scope|service)', replacement: 'run.$1'}
+  # Gestor de sesión de cada usuario: user@1000.service.
+  - {regex: '(user|user-runtime-dir)@[0-9]+\.service', replacement: '$1@.service'}
+  # Contenedores con el driver systemd de cgroups.
+  - {regex: '(docker|libpod|libpod-conmon|cri-containerd|crio|crio-conmon)-[0-9a-f]+\.scope', replacement: '$1.scope'}
+  # Instancias por conexión (sshd con socket activation) o por crash.
+  - {regex: '(sshd?|systemd-coredump)@.+\.service', replacement: '$1@.service'}
 # En la primera corrida no se manda historial más viejo que esto.
 alloy_logs_journal_max_age: "12h"
 # Archivos de log: [{path: "/var/log/app/*.log", labels: {app: x},
