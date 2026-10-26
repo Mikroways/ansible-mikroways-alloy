@@ -102,11 +102,20 @@
             aliases: [receiver.test]
         state: started
 
+    # tinyproxy se instala al arrancar: si la descarga falla, el contenedor
+    # termina y todo el envío del escenario proxy queda caído. Se reintenta y
+    # después se espera a que atienda (ver "Esperar a tinyproxy").
     - name: Levantar tinyproxy
       community.docker.docker_container:
         name: alloy-test-proxy
         image: docker.io/library/alpine:3.20
-        command: ["sh", "-c", "apk add --no-cache tinyproxy >/dev/null && exec tinyproxy -d -c /etc/tinyproxy/test.conf"]
+        command:
+          - sh
+          - -c
+          - >-
+            for i in 1 2 3 4 5; do
+            apk add --no-cache tinyproxy >/dev/null && exec tinyproxy -d -c /etc/tinyproxy/test.conf;
+            echo "apk add tinyproxy falló (intento $i)" >&2; sleep 5; done; exit 1
         volumes: ["{{ _res }}/tinyproxy.conf:/etc/tinyproxy/test.conf:ro"]
         networks:
           - name: alloy-test
@@ -129,6 +138,28 @@
       loop:
         - http://127.0.0.1:19090/-/ready
         - http://127.0.0.1:13100/ready
+
+    - name: Esperar a tinyproxy
+      block:
+        - name: Esperar a que tinyproxy atienda en 8888
+          community.docker.docker_container_exec:
+            container: alloy-test-proxy
+            command: nc -z 127.0.0.1 8888
+          register: _tinyproxy
+          until: _tinyproxy.rc | default(1) == 0
+          retries: 45
+          delay: 2
+          changed_when: false
+      rescue:
+        - name: Leer los logs de tinyproxy
+          ansible.builtin.command: docker logs --tail 30 alloy-test-proxy
+          register: _tinyproxy_logs
+          changed_when: false
+          failed_when: false
+
+        - name: Fallar con los logs de tinyproxy
+          ansible.builtin.fail:
+            msg: "tinyproxy no arrancó. Logs:\n{{ _tinyproxy_logs.stdout }}\n{{ _tinyproxy_logs.stderr }}"
 
 # EL8 trae Python 3.6 y ansible-core 2.19+ necesita 3.8+: se instala
 # python3.11 (AppStream) antes de juntar facts. Ver README.
