@@ -9,10 +9,41 @@
       changed_when: false
 
     - name: Verificar lo que llega al receptor
-      ansible.builtin.include_tasks: verify-tasks.yml
-      vars:
-        _sel: 'cliente="test",entorno="ci",os="linux",host="{{ inventory_hostname }}"'
-        verify_prom_queries:
-          - {query: 'alloy_build_info{ {{ _sel }} }', expect: present}
-        verify_loki_queries:
-          - {query: '{ {{ _sel }},job="integrations/journal"} |= "alloy-envio-{{ inventory_hostname }}"', expect: present}
+      block:
+        - name: Consultar el receptor
+          ansible.builtin.include_tasks: verify-tasks.yml
+          vars:
+            _sel: 'cliente="test",entorno="ci",os="linux",host="{{ inventory_hostname }}"'
+            verify_prom_queries:
+              - {query: 'alloy_build_info{ {{ _sel }} }', expect: present}
+            verify_loki_queries:
+              - {query: '{ {{ _sel }},job="integrations/journal"} |= "alloy-envio-{{ inventory_hostname }}"', expect: present}
+      # Si no llega nada, la causa está en Alloy o en el camino (proxy, nginx):
+      # se muestra todo antes de fallar.
+      rescue:
+        - name: Leer el journal de Alloy
+          ansible.builtin.command: journalctl -u alloy --no-pager -n 500 -o cat
+          register: _alloy_journal
+          changed_when: false
+          failed_when: false
+
+        - name: Leer los logs del receptor y del proxy
+          ansible.builtin.command: "docker logs --tail 30 {{ item }}"
+          loop: [alloy-test-proxy, alloy-test-receiver]
+          register: _receiver_logs
+          changed_when: false
+          failed_when: false
+          delegate_to: localhost
+          run_once: true
+
+        - name: Fallar con el diagnóstico
+          ansible.builtin.fail:
+            msg: |-
+              No llegó lo esperado al receptor desde {{ inventory_hostname }}: {{ ansible_failed_result.msg | default('') }}
+              --- journal de alloy (warn y error) ---
+              {{ (_alloy_journal.stdout_lines | default([]) | select('search', 'level=(warn|error)') | list)[-15:] | join('\n') }}
+              {% for r in _receiver_logs.results | default([]) %}
+              --- docker logs {{ r.item }} ---
+              {{ r.stdout | default('') }}
+              {{ r.stderr | default('') }}
+              {% endfor %}
